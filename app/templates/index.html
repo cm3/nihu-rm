@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>研究者一覧 | 人間文化研究機構</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="ly_container">
+        <header class="ly_header">
+            <div class="bl_header_inner">
+                <h1 class="bl_header_title">
+                    <a href="https://www.nihu.jp" class="bl_header_logo">
+                        人間文化研究機構
+                    </a>
+                </h1>
+            </div>
+        </header>
+
+        <main class="ly_main">
+            <div class="bl_pageTitle">
+                <h1>研究者一覧</h1>
+            </div>
+
+            <div class="ly_content">
+                <!-- フィルターセクション -->
+                <div class="bl_filterSection">
+                    <!-- イニシャルフィルター -->
+                    <div class="bl_filterGroup">
+                        <div class="bl_filterButtons">
+                            <button class="filter-initial is_active" data-initial="">ALL</button>
+                            <button class="filter-initial" data-initial="A">A</button>
+                            <button class="filter-initial" data-initial="B">B</button>
+                            <button class="filter-initial" data-initial="C">C</button>
+                            <button class="filter-initial" data-initial="D">D</button>
+                            <button class="filter-initial" data-initial="E">E</button>
+                            <button class="filter-initial" data-initial="F">F</button>
+                            <button class="filter-initial" data-initial="G">G</button>
+                            <button class="filter-initial" data-initial="H">H</button>
+                            <button class="filter-initial" data-initial="I">I</button>
+                            <button class="filter-initial" data-initial="J">J</button>
+                            <button class="filter-initial" data-initial="K">K</button>
+                            <button class="filter-initial" data-initial="L">L</button>
+                            <button class="filter-initial" data-initial="M">M</button>
+                            <button class="filter-initial" data-initial="N">N</button>
+                            <button class="filter-initial" data-initial="O">O</button>
+                            <button class="filter-initial" data-initial="P">P</button>
+                            <button class="filter-initial" data-initial="Q">Q</button>
+                            <button class="filter-initial" data-initial="R">R</button>
+                            <button class="filter-initial" data-initial="S">S</button>
+                            <button class="filter-initial" data-initial="T">T</button>
+                            <button class="filter-initial" data-initial="U">U</button>
+                            <button class="filter-initial" data-initial="V">V</button>
+                            <button class="filter-initial" data-initial="W">W</button>
+                            <button class="filter-initial" data-initial="X">X</button>
+                            <button class="filter-initial" data-initial="Y">Y</button>
+                            <button class="filter-initial" data-initial="Z">Z</button>
+                        </div>
+                    </div>
+
+                    <!-- 機関フィルター -->
+                    <div class="bl_filterGroup">
+                        <div class="bl_kikanFilter" id="orgFilters">
+                            <!-- JavaScriptで動的に生成 -->
+                        </div>
+                    </div>
+
+                    <!-- キーワード検索 -->
+                    <div class="bl_filterGroup">
+                        <div class="bl_searchBox">
+                            <input type="text" id="searchQuery" class="bl_searchInput" placeholder="名前、役職、業績などで検索">
+                            <button id="searchButton" class="bl_searchButton">検索</button>
+                        </div>
+                    </div>
+
+                    <!-- リセットボタン -->
+                    <div class="bl_filterGroup">
+                        <button id="resetFilterButton" class="bl_resetButton">フィルターをリセット</button>
+                    </div>
+                </div>
+
+                <!-- 検索結果サマリー -->
+                <div class="bl_resultSummary">
+                    <p id="resultCount">読み込み中...</p>
+                </div>
+
+                <!-- 研究者リスト -->
+                <div class="bl_articleList" id="researcherList">
+                    <!-- JavaScriptで動的に生成 -->
+                </div>
+
+                <!-- ページネーション -->
+                <div class="bl_pagination" id="pagination">
+                    <!-- JavaScriptで動的に生成 -->
+                </div>
+            </div>
+        </main>
+
+        <footer class="ly_footer">
+            <div class="bl_footer_inner">
+                <div class="bl_footer_content">
+                    <div class="bl_footer_info">
+                        <p class="bl_footer_name">人間文化研究機構</p>
+                        <p class="bl_footer_address">〒105-0001 東京都港区虎ノ門4-3-13 ヒューリック神谷町ビル2階</p>
+                    </div>
+                    <div class="bl_footer_copyright">
+                        <p>&copy; National Institutes for the Humanities</p>
+                    </div>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <script src="/static/js/main.js"></script>
+</body>
+</html>

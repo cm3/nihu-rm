@@ -1,0 +1,67 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+pip-log.txt
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Local environment
+.envrc
+.env
+.vite/
+.history/
+
+# Database files
+data/researchers.db
+data/researchers.db.backup*
+data/researchers.db-*
+*.db
+*.db-journal
+
+# Data files
+data/json/*.json
+box/
+
+# Static images (optional - comment out if you want to track them)
+# static/images/*.png
+# static/images/*.jpg
+
+# Logs
+log.txt
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+*.cache
+
+# Office documents
+*.ods
+*.~lock.*
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
