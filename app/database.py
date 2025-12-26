@@ -172,6 +172,32 @@ class Database:
 
         return result['count']
 
+    def count_by_initial(
+        self,
+        query: Optional[str] = None,
+        org1: Optional[str] = None,
+        org2: Optional[str] = None
+    ):
+        """各イニシャルごとの研究者数を取得"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        # A-Zの各イニシャルで件数をカウント
+        initials = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+        counts = {}
+
+        for initial in initials:
+            count = self.count_researchers(
+                query=query,
+                org1=org1,
+                org2=org2,
+                initial=initial
+            )
+            counts[initial] = count
+
+        conn.close()
+        return counts
+
     def get_researcher_by_id(self, researcher_id: str):
         """IDで研究者を取得"""
         conn = self.get_connection()

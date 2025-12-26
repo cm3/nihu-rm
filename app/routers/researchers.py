@@ -82,3 +82,16 @@ async def get_organizations():
         {"id": "民博", "name": "国立民族学博物館"}
     ]
     return organizations
+
+
+@router.get("/initial-counts")
+async def get_initial_counts(
+    query: Optional[str] = Query(None, description="検索クエリ"),
+    org1: Optional[str] = Query(None, description="機関1でフィルター"),
+    org2: Optional[str] = Query(None, description="機関2でフィルター")
+):
+    """
+    各イニシャルの研究者数を取得
+    """
+    counts = db.count_by_initial(query=query, org1=org1, org2=org2)
+    return counts
