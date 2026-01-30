@@ -10,8 +10,14 @@ import csv
 import json
 import re
 import asyncio
+import sys
 from pathlib import Path
 import httpx
+
+# app-c の common.py を参照
+APP_C_DIR = Path(__file__).parent.parent / "app-c"
+sys.path.insert(0, str(APP_C_DIR))
+from common import get_endpoint_list
 
 
 def extract_researchmap_id(url: str) -> str | None:
@@ -45,24 +51,8 @@ async def fetch_endpoint(client: httpx.AsyncClient, rm_id: str, endpoint: str = 
 
 async def fetch_researcher_data(client: httpx.AsyncClient, rm_id: str) -> dict:
     """researchmapから研究者の全データを取得"""
-    # 取得するエンドポイント一覧
-    endpoints = [
-        "",  # ベースプロフィール
-        "research_interests",
-        "research_areas",
-        "published_papers",
-        "books_etc",
-        "misc",
-        "presentations",
-        "research_experience",
-        "education",
-        "awards",
-        "committee_memberships",
-        "teaching_experience",
-        "association_memberships",
-        "works",
-        "research_projects"
-    ]
+    # 取得するエンドポイント一覧（CSVから読み込み）
+    endpoints = get_endpoint_list()
 
     result = {}
 
@@ -77,15 +67,36 @@ async def fetch_researcher_data(client: httpx.AsyncClient, rm_id: str) -> dict:
     return result
 
 
-async def download_all_data(csv_path: Path, output_dir: Path, incremental: bool = False):
+def read_ids_file(ids_file: Path) -> set[str]:
+    """IDファイルを読み込み、有効なIDのセットを返す"""
+    ids = set()
+    with ids_file.open("r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip().replace("\r", "")
+            if line and not line.startswith("#"):
+                ids.add(line)
+    return ids
+
+
+async def download_all_data(csv_path: Path, output_dir: Path, incremental: bool = False, ids_file: Path | None = None):
     """全研究者のデータをダウンロード
 
     Args:
         csv_path: CSVファイルのパス
         output_dir: 出力先ディレクトリ
         incremental: Trueの場合、既存のJSONファイルがある研究者はスキップ
+        ids_file: 指定した場合、このファイルに含まれるIDのみダウンロード
     """
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    # IDファイルが指定されている場合、絞り込み用のIDセットを読み込む
+    filter_ids = None
+    if ids_file:
+        if not ids_file.exists():
+            print(f"Error: IDs file not found: {ids_file}")
+            return
+        filter_ids = read_ids_file(ids_file)
+        print(f"Filter: {len(filter_ids)} IDs from {ids_file}")
 
     # CSVから研究者情報を読み込み
     researchers = []
@@ -105,6 +116,9 @@ async def download_all_data(csv_path: Path, output_dir: Path, incremental: bool 
 
             rm_id = extract_researchmap_id(rm_url)
             if rm_id:
+                # IDフィルタが指定されている場合、マッチするもののみ追加
+                if filter_ids is not None and rm_id not in filter_ids:
+                    continue
                 researchers.append({
                     'id': rm_id,
                     'name_ja': name_ja,
@@ -116,7 +130,7 @@ async def download_all_data(csv_path: Path, output_dir: Path, incremental: bool 
                     'researchmap_url': rm_url
                 })
 
-    print(f"Found {len(researchers)} researchers in CSV")
+    print(f"Found {len(researchers)} researchers in CSV" + (" (after filtering)" if filter_ids else ""))
 
     # 差分ダウンロードモードの場合、既存のJSONファイルをチェック
     if incremental:
@@ -188,6 +202,10 @@ def main():
 
   # カスタムCSVファイルとディレクトリを指定
   python scripts/download_data.py --csv box/custom.csv --output data/output
+
+  # IDファイルで絞り込んでダウンロード
+  python scripts/download_data.py --ids-file data/test_ids.txt
+  python scripts/download_data.py --ids-file data/test_ids.txt --incremental
         """
     )
 
@@ -211,6 +229,13 @@ def main():
         help='差分ダウンロードモード: 既存のJSONファイルがある研究者はスキップ'
     )
 
+    parser.add_argument(
+        '--ids-file',
+        type=Path,
+        default=None,
+        help='IDファイル（1行1ID）で絞り込み (例: data/test_ids.txt)'
+    )
+
     args = parser.parse_args()
 
     # CSVファイルの存在確認
@@ -221,9 +246,11 @@ def main():
     print(f"CSV file: {args.csv}")
     print(f"Output directory: {args.output}")
     print(f"Mode: {'Incremental (skip existing)' if args.incremental else 'Full (overwrite existing)'}")
+    if args.ids_file:
+        print(f"IDs filter: {args.ids_file}")
     print()
 
-    asyncio.run(download_all_data(args.csv, args.output, args.incremental))
+    asyncio.run(download_all_data(args.csv, args.output, args.incremental, args.ids_file))
 
 
 if __name__ == "__main__":

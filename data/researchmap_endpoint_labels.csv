@@ -1,0 +1,21 @@
+endpoint,ja,en,description
+profile,プロフィール,Profile,研究者の基本情報（氏名、所属、連絡先等）
+research_interests,研究キーワード,Research Keywords,研究に関連するキーワード
+research_areas,研究分野,Research Fields,e-Rad分野分類に基づく研究分野（大分類・小分類）
+research_experience,経歴,Research Experience,卒業・修了後および学位取得後のキャリア情報
+education,学歴,Education,学歴情報
+committee_memberships,委員歴,Committee Memberships,委員会や審議会等の委員としての経歴
+awards,受賞,Awards,受賞歴
+published_papers,論文,Published Papers,学術雑誌論文、国際会議録、紀要論文、学位論文等
+misc,MISC,MISC,速報・短報、研究発表要旨、総説・解説、書評、会議報告等
+books_etc,書籍等出版物,Books etc.,単著、共著、編著、分担執筆、翻訳等の書籍
+presentations,講演・口頭発表等,Presentations,口頭発表、ポスター発表、招待講演等
+teaching_experience,担当経験のある科目(授業),Teaching Experience,担当した授業科目
+association_memberships,所属学協会,Association Memberships,所属している学会・協会
+works,Works（作品等）,Works,芸術作品、建築作品、ソフトウェア、データベース、Webサービス、教材等
+research_projects,共同研究・競争的資金等の研究課題,Research Projects,科研費、受託研究、共同研究等の研究課題
+industrial_property_rights,産業財産権,Industrial Property Rights,特許、実用新案、意匠、商標等
+social_contribution_activities,社会貢献活動,Social Contribution Activities,社会貢献に関する活動
+media_coverage,メディア報道,Media Coverage,テレビ、ラジオ、新聞、インターネット等での報道
+academic_contribution_activities,学術貢献活動,Academic Contribution Activities,学会運営、査読、標準化活動、文化財保存等
+others,その他,Others,上記18種類に該当しない業績

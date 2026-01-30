@@ -33,20 +33,19 @@ ENV/
 .vite/
 .history/
 
-# Database files
-data/researchers.db
-data/researchers.db.backup*
-data/researchers.db-*
+# Sandbox
+
+_sandbox/
+
+# Database and Data files
+data/*
+!data/researchmap_endpoint_labels.csv
+!data/lang.csv
 *.db
 *.db-journal
 
-# Data files
-data/json/*.json
-box/
-
-# Static images (optional - comment out if you want to track them)
-# static/images/*.png
-# static/images/*.jpg
+# Temporary files                                                             
+app-c/work/ 
 
 # Logs
 log.txt
