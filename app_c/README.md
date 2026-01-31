@@ -1,11 +1,11 @@
-# app-c: researchmap → Excel 変換 Web アプリ
+# app_c: researchmap → Excel 変換 Web アプリ
 
 researchmap の研究者 ID を入力すると、JSON のダウンロードから Excel 生成までを自動実行し、ダウンロードリンクを表示する Web アプリケーションです。
 
 ## セットアップ
 
 ```bash
-cd app-c
+cd app_c
 pip install -r requirements.txt
 ```
 
@@ -33,7 +33,7 @@ uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 入力: 研究者ID (例: cm3)
   ↓
-1. researchmap API から JSON 取得（app-a/download_data.py を使用）
+1. researchmap API から JSON 取得（app_a/download_data.py を使用）
   ↓
 2. JSON → CSV 変換（7種類）
    - 論文
@@ -49,14 +49,14 @@ uvicorn main:app --host 0.0.0.0 --port 8000
 出力: {researcher_id}.xlsx
 ```
 
-## app-a との関係
+## app_a との関係
 
-本アプリケーションは `app-a/download_data.py` の `fetch_researcher_data()` 関数を再利用しています。
+本アプリケーションは `app_a/download_data.py` の `fetch_researcher_data()` 関数を再利用しています。
 
 ```
-app-a/download_data.py   ← 正本（バッチダウンロード用）
+app_a/download_data.py   ← 正本（バッチダウンロード用）
     ↓ import
-app-c/main.py            ← Web API から呼び出し
+app_c/main.py            ← Web API から呼び出し
 ```
 
 `download_data.py` は以下の機能を提供します：
@@ -75,7 +75,7 @@ app-c/main.py            ← Web API から呼び出し
 ## ディレクトリ構成
 
 ```
-app-c/
+app_c/
 ├── main.py                              # FastAPI アプリケーション
 ├── common.py                            # 共通ユーティリティ
 ├── requirements.txt                     # 依存パッケージ
@@ -87,7 +87,7 @@ app-c/
 ├── static/                              # 静的ファイル
 └── work/                                # 一時作業ディレクトリ（自動生成）
 
-../app-a/
+../app_a/
 └── download_data.py                     # researchmap データ取得（共有）
 
 ../data/
@@ -101,4 +101,4 @@ app-c/
 
 - `work/` ディレクトリ内のファイルは 24 時間後に自動削除されます
 - 大量のリクエストを処理する場合は、非同期処理の最適化が必要です
-- `download_data.py` を修正する場合は app-a 側の正本を編集してください
+- `download_data.py` を修正する場合は app_a 側の正本を編集してください

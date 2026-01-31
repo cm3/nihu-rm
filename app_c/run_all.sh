@@ -54,15 +54,15 @@ done
 # 「一行 1 ID」ファイル（固定パスでOKとのことなので直書き）
 IDS_FILE="../data/test_ids.txt"
 
-# スクリプト配置（この .sh が app-c/ にある想定）
+# スクリプト配置（この .sh が app_c/ にある想定）
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
-# JSON 入力 / CSV 出力（app-c/ から ../data/...）
+# JSON 入力 / CSV 出力（app_c/ から ../data/...）
 JSON_DIR="${SCRIPT_DIR}/../data/json"
 CSV_DIR="${SCRIPT_DIR}/../data/csv"
 
-# ダウンロードスクリプト（app-a/ に配置）
-DOWNLOAD_SCRIPT="${SCRIPT_DIR}/../app-a/download_data.py"
+# ダウンロードスクリプト（app_a/ に配置）
+DOWNLOAD_SCRIPT="${SCRIPT_DIR}/../app_a/download_data.py"
 
 # 実行する Python スクリプト（同一IF: --input-file / --output-dir）
 PY_SCRIPTS=(

@@ -4,12 +4,16 @@
 researchmap JSON → Excel 変換 Web アプリ
 
 Usage:
-  uvicorn main:app --reload --port 8000
+  uvicorn app_c.main:app --reload --port 8001
+
+サブパス配下での運用:
+  NIHU_RM_ROOT_PATH=/nihu-rm-c uvicorn app_c.main:app --port 8001
 
 アクセス:
-  http://localhost:8000/
+  http://localhost:8001/
 """
 
+import os
 import re
 import shutil
 import uuid
@@ -22,13 +26,18 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.requests import Request
 
-# app-a のパスを追加（download_data.py の参照用）
-import sys
-APP_A_DIR = Path(__file__).parent.parent / "app-a"
-sys.path.insert(0, str(APP_A_DIR))
-
 # 変換スクリプトのディレクトリ（このディレクトリ自身）
 SCRIPT_DIR = Path(__file__).parent
+
+# パッケージとして実行した場合に備え、ローカルディレクトリを sys.path に追加
+import sys
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+# app_a のパスを追加（download_data.py の参照用）
+APP_A_DIR = Path(__file__).parent.parent / "app_a"
+if str(APP_A_DIR) not in sys.path:
+    sys.path.insert(0, str(APP_A_DIR))
 
 from common import (
     get_researchmap_data,
@@ -36,7 +45,15 @@ from common import (
 )
 from download_data import fetch_researcher_data
 
-app = FastAPI(title="researchmap → Excel 変換")
+# root_path を環境変数から取得（nginx でサブパス配下に配置する場合に設定）
+ROOT_PATH = os.environ.get("NIHU_RM_ROOT_PATH", "")
+
+app = FastAPI(
+    title="researchmap → Excel 変換",
+    root_path=ROOT_PATH,
+    docs_url="/docs",
+    openapi_url="/openapi.json",
+)
 
 # テンプレートと静的ファイル
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
@@ -248,7 +265,10 @@ async def get_allowed_ids():
 
 
 @app.post("/api/convert")
-async def convert(researcher_id: str = Form(...), background_tasks: BackgroundTasks = None):
+async def convert(
+    researcher_id: str = Form(...),
+    background_tasks: BackgroundTasks = None
+):
     """研究者 ID から Excel を生成"""
     # バリデーション
     researcher_id = validate_researcher_id(researcher_id)
@@ -285,7 +305,7 @@ async def convert(researcher_id: str = Form(...), background_tasks: BackgroundTa
             "researcher_id": researcher_id,
             "name": name,
             "erad_id": erad_id,
-            "download_url": f"/api/download/{work_id}/{researcher_id}.xlsx",
+            "download_url": f"api/download/{work_id}/{researcher_id}.xlsx",
             "csv_count": len(csv_files),
         }
 
@@ -312,4 +332,11 @@ async def download(work_id: str, filename: str):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # 開発時は直接実行可能
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=8001,
+        reload=True,
+        root_path=ROOT_PATH,
+    )

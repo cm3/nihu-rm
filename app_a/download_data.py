@@ -14,8 +14,8 @@ import sys
 from pathlib import Path
 import httpx
 
-# app-c の common.py を参照
-APP_C_DIR = Path(__file__).parent.parent / "app-c"
+# app_c の common.py を参照
+APP_C_DIR = Path(__file__).parent.parent / "app_c"
 sys.path.insert(0, str(APP_C_DIR))
 from common import get_endpoint_list
 

@@ -191,8 +191,8 @@
         const status = document.getElementById('status');
         const idCount = document.getElementById('id_count');
 
-        // 許可されたID数を取得
-        fetch('/api/allowed-ids')
+        // 許可されたID数を取得（相対パス）
+        fetch('api/allowed-ids')
             .then(res => res.json())
             .then(data => {
                 idCount.textContent = `登録済み研究者: ${data.count} 名`;
@@ -221,7 +221,7 @@
                 const formData = new FormData();
                 formData.append('researcher_id', researcherId);
 
-                const response = await fetch('/api/convert', {
+                const response = await fetch('api/convert', {
                     method: 'POST',
                     body: formData
                 });
@@ -232,7 +232,7 @@
                     throw new Error(data.detail || 'エラーが発生しました');
                 }
 
-                // 成功
+                // 成功（download_url は相対パスで返される）
                 let html = `<p style="margin-bottom:15px;"><strong>${escapeHtml(data.name || '(不明)')}</strong></p>`;
                 html += `<a href="${data.download_url}" class="download-link" download>Excel をダウンロード</a>`;
 

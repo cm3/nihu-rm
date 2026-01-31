@@ -45,7 +45,7 @@ function updateUrl() {
 // 機関リストを読み込み
 async function loadOrganizations() {
     try {
-        const response = await fetch('/api/organizations');
+        const response = await fetch('api/organizations');
         state.organizations = await response.json();
         renderOrganizationFilters();
     } catch (error) {
@@ -61,7 +61,7 @@ async function loadInitialCounts() {
         if (state.org1) params.append('org1', state.org1);
         if (state.org2) params.append('org2', state.org2);
 
-        const response = await fetch(`/api/initial-counts?${params}`);
+        const response = await fetch(`api/initial-counts?${params}`);
         state.initialCounts = await response.json();
         updateInitialButtons();
     } catch (error) {
@@ -221,7 +221,7 @@ async function performSearch() {
 
     try {
         showLoading();
-        const response = await fetch(`/api/researchers?${params}`);
+        const response = await fetch(`api/researchers?${params}`);
         const data = await response.json();
 
         renderResults(data);

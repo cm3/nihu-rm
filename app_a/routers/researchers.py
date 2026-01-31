@@ -4,8 +4,9 @@
 
 from typing import Optional
 from fastapi import APIRouter, Query
-from app.database import Database
-from app.models import ResearcherListResponse, Researcher
+
+from ..database import Database
+from ..models import ResearcherListResponse, Researcher
 
 router = APIRouter()
 db = Database()
