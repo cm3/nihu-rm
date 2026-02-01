@@ -43,6 +43,8 @@ researcher-search/
 │   ├── css/
 │   └── js/
 │
+├── deploy.sh                  # VPS 初回デプロイスクリプト
+├── update.sh                  # コード更新スクリプト
 └── requirements.txt           # Python 依存関係
 ```
 
@@ -103,177 +105,140 @@ curl http://localhost:8001/docs
 
 ---
 
-## VPS でのサブパス運用
+## VPS へのデプロイ
 
-nginx のリバースプロキシ配下で、サブパス（`/nihu-rm-a/`, `/nihu-rm-c/`）でアプリを公開する場合の設定例です。
+nginx のリバースプロキシ配下で、サブパス（`/nihu-rm-a/`, `/nihu-rm-c/`）でアプリを公開します。
 
-### ディレクトリ構成（推奨）
+### 自動デプロイ（推奨）
+
+`deploy.sh` を使用すると、以下を自動で行います：
+- OS パッケージのインストール（nginx, certbot, python3-venv）
+- ディレクトリ作成とリポジトリのクローン
+- Python 仮想環境と依存関係のセットアップ
+- systemd ユーザーサービスの作成・起動
+- nginx 設定ファイルの生成（SSL 対応）
+
+```bash
+# リポジトリをクローン（一時的な場所）
+git clone https://github.com/cm3/nihu-rm.git /tmp/nihu-rm
+cd /tmp/nihu-rm
+
+# 環境変数でカスタマイズ可能（デフォルト値あり）
+export DOMAIN="your-domain.example.com"  # デフォルト: ik1-421-42635.vs.sakura.ne.jp
+
+# デプロイ実行
+bash deploy.sh
+```
+
+#### deploy.sh の設定変数
+
+| 変数 | デフォルト値 | 説明 |
+|------|-------------|------|
+| `DOMAIN` | `ik1-421-42635.vs.sakura.ne.jp` | サーバーのドメイン名 |
+| `APP_ROOT` | `/srv/projects/nihu-rm` | アプリケーションルート |
+| `DATA_PERSIST_DIR` | `/var/lib/nihu-rm` | 永続データディレクトリ |
+| `PREFIX_A` | `/nihu-rm-a` | app_a のサブパス |
+| `PREFIX_C` | `/nihu-rm-c` | app_c のサブパス |
+| `PORT_A` | `8000` | app_a のポート |
+| `PORT_C` | `8001` | app_c のポート |
+
+### コードの更新
+
+GitHub の最新コードに追従するには `update.sh` を使用します：
+
+```bash
+cd /srv/projects/nihu-rm/repo
+bash update.sh
+```
+
+`update.sh` は以下を行います：
+- `git pull --ff-only` で最新コードを取得
+- pip 依存関係を更新
+- systemd サービスを再起動
+
+```bash
+# ダーティな作業ツリーを許可する場合
+ALLOW_DIRTY=1 bash update.sh
+```
+
+### ディレクトリ構成
+
+デプロイ後の構成：
 
 ```
-/opt/nihu-rm/                  # アプリケーション
-├── venv/
-├── app_a/
-├── app_c/
-├── static/
-└── requirements.txt
+/srv/projects/nihu-rm/         # APP_ROOT
+├── repo/                      # git リポジトリ
+│   ├── app_a/
+│   ├── app_c/
+│   ├── static/
+│   └── data/                  # 実ディレクトリ
+│       ├── json -> /var/lib/nihu-rm/json
+│       ├── csv -> /var/lib/nihu-rm/csv
+│       ├── xlsx -> /var/lib/nihu-rm/xlsx
+│       └── researchers.db -> /var/lib/nihu-rm/researchers.db
+└── venv/                      # Python 仮想環境
 
-/var/lib/nihu-rm/              # データ（永続化）
+/var/lib/nihu-rm/              # DATA_PERSIST_DIR（永続データ）
 ├── researchers.db
 ├── json/
 ├── csv/
 └── xlsx/
 
-# シンボリックリンクで接続
-/opt/nihu-rm/data -> /var/lib/nihu-rm
+~/.config/systemd/user/        # ユーザー systemd サービス
+├── nihu-rm-a.service
+└── nihu-rm-c.service
 ```
 
-### セットアップ
+### データの準備
+
+デプロイ後、研究者データを準備します：
 
 ```bash
-# アプリケーションを配置
-sudo mkdir -p /opt/nihu-rm
-sudo chown $USER:$USER /opt/nihu-rm
-cd /opt/nihu-rm
-git clone https://github.com/cm3/nihu-rm.git .
+cd /srv/projects/nihu-rm/repo
 
-# データディレクトリを作成
-sudo mkdir -p /var/lib/nihu-rm/{json,csv,xlsx}
-sudo chown -R $USER:$USER /var/lib/nihu-rm
+# 研究者リスト CSV を配置
+cp /path/to/researchers.csv data/
 
-# シンボリックリンクを作成
-ln -s /var/lib/nihu-rm data
+# researchmap からデータをダウンロード
+../venv/bin/python app_a/download_data.py --csv data/researchers.csv --incremental
 
-# 設定ファイルをコピー
-cp /path/to/lang.csv data/
-cp /path/to/researchmap_endpoint_labels.csv data/
-
-# 仮想環境を作成
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-pip install -r app_c/requirements.txt
-
-# データをダウンロード・セットアップ
-python app_a/download_data.py --csv /path/to/researchers.csv
-python app_a/setup_db.py
+# データベースをセットアップ
+../venv/bin/python app_a/setup_db.py
 ```
 
-### systemd ユニットファイル
-
-#### `/etc/systemd/system/nihu-rm-a.service`
-
-```ini
-[Unit]
-Description=NIHU Researcher Search (app_a)
-After=network.target
-
-[Service]
-Type=simple
-User=www-data
-Group=www-data
-WorkingDirectory=/opt/nihu-rm
-Environment="PATH=/opt/nihu-rm/venv/bin"
-Environment="NIHU_RM_ROOT_PATH=/nihu-rm-a"
-ExecStart=/opt/nihu-rm/venv/bin/uvicorn app_a.main:app \
-    --host 127.0.0.1 \
-    --port 8000 \
-    --proxy-headers \
-    --forwarded-allow-ips="127.0.0.1"
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-```
-
-#### `/etc/systemd/system/nihu-rm-c.service`
-
-```ini
-[Unit]
-Description=NIHU Excel Converter (app_c)
-After=network.target
-
-[Service]
-Type=simple
-User=www-data
-Group=www-data
-WorkingDirectory=/opt/nihu-rm
-Environment="PATH=/opt/nihu-rm/venv/bin"
-Environment="NIHU_RM_ROOT_PATH=/nihu-rm-c"
-ExecStart=/opt/nihu-rm/venv/bin/uvicorn app_c.main:app \
-    --host 127.0.0.1 \
-    --port 8001 \
-    --proxy-headers \
-    --forwarded-allow-ips="127.0.0.1"
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-```
-
-#### サービスの有効化
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable nihu-rm-a nihu-rm-c
-sudo systemctl start nihu-rm-a nihu-rm-c
-sudo systemctl status nihu-rm-a nihu-rm-c
-```
-
-### nginx 設定例
-
-```nginx
-server {
-    listen 443 ssl http2;
-    server_name example.com;
-
-    # SSL 設定（省略）
-
-    # app_a: 研究者検索
-    location /nihu-rm-a/ {
-        proxy_pass http://127.0.0.1:8000/;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header X-Forwarded-Prefix /nihu-rm-a;
-    }
-
-    # app_c: Excel 変換
-    location /nihu-rm-c/ {
-        proxy_pass http://127.0.0.1:8001/;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header X-Forwarded-Prefix /nihu-rm-c;
-    }
-}
-```
-
-**ポイント:**
-- `proxy_pass` の末尾に `/` を付けることで、nginx がプレフィックスを剥がして upstream に渡す
-- アプリ側の `NIHU_RM_ROOT_PATH` で URL 生成時にプレフィックスを補完
-
-### 動作確認（VPS）
+### 動作確認
 
 ```bash
 # ヘルスチェック
-curl https://example.com/nihu-rm-a/health
-curl https://example.com/nihu-rm-c/api/allowed-ids
+curl https://your-domain.example.com/nihu-rm-a/health
+curl https://your-domain.example.com/nihu-rm-c/api/allowed-ids
 
 # Swagger UI
-curl -I https://example.com/nihu-rm-a/docs
-curl -I https://example.com/nihu-rm-c/docs
+curl -I https://your-domain.example.com/nihu-rm-a/docs
+curl -I https://your-domain.example.com/nihu-rm-c/docs
+```
 
-# OpenAPI JSON
-curl https://example.com/nihu-rm-a/openapi.json | head
-curl https://example.com/nihu-rm-c/openapi.json | head
+### サービス管理
 
-# API エンドポイント
-curl "https://example.com/nihu-rm-a/api/organizations"
-curl "https://example.com/nihu-rm-a/api/researchers?page=1&page_size=5"
+```bash
+# ステータス確認
+systemctl --user status nihu-rm-a nihu-rm-c
+
+# 再起動
+systemctl --user restart nihu-rm-a nihu-rm-c
+
+# ログ確認
+journalctl --user -u nihu-rm-a -f
+journalctl --user -u nihu-rm-c -f
+```
+
+### SSL 証明書（Let's Encrypt）
+
+`deploy.sh` は既存の証明書を検出して HTTPS 設定を生成します。
+証明書がない場合は HTTP のみで設定され、後から追加できます：
+
+```bash
+sudo certbot --nginx -d your-domain.example.com
 ```
 
 ---
