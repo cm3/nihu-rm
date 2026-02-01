@@ -2,10 +2,44 @@
 データベース接続とクエリ処理
 """
 
+import re
 import sqlite3
 import json
 from pathlib import Path
 from typing import Optional
+
+
+def generate_snippet(text: str, query: str, context_chars: int = 30) -> Optional[str]:
+    """テキストからクエリを含むスニペットを生成"""
+    if not text or not query:
+        return None
+
+    # クエリの位置を検索（大文字小文字を区別しない）
+    lower_text = text.lower()
+    lower_query = query.lower()
+    pos = lower_text.find(lower_query)
+
+    if pos == -1:
+        return None
+
+    # スニペットの開始・終了位置を計算
+    start = max(0, pos - context_chars)
+    end = min(len(text), pos + len(query) + context_chars)
+
+    # スニペットを抽出
+    snippet = text[start:end]
+
+    # 前後に ... を追加
+    if start > 0:
+        snippet = "..." + snippet
+    if end < len(text):
+        snippet = snippet + "..."
+
+    # クエリ部分を <mark> でハイライト（大文字小文字を保持）
+    pattern = re.compile(re.escape(query), re.IGNORECASE)
+    snippet = pattern.sub(lambda m: f"<mark>{m.group()}</mark>", snippet)
+
+    return snippet
 
 
 class Database:
@@ -53,6 +87,7 @@ class Database:
             params.append(f"{initial}%")
 
         # 全文検索（名前、機関、役職、業績など）
+        use_like_search = False
         if query:
             # trigram tokenizerは3文字以上必要
             # 3文字未満の検索語がある場合はLIKE検索にフォールバック
@@ -88,17 +123,17 @@ class Database:
                 """
                 params = [fts_query]
             else:
-                # 3文字未満: LIKE検索にフォールバック（スニペットなし）
+                # 3文字未満: LIKE検索にフォールバック（テキストを取得してスニペット生成）
+                use_like_search = True
                 like_pattern = f"%{query}%"
                 sql = """
                     SELECT r.*,
-                        NULL as papers_snippet, NULL as books_snippet,
-                        NULL as presentations_snippet, NULL as awards_snippet,
-                        NULL as research_interests_snippet, NULL as research_areas_snippet,
-                        NULL as research_projects_snippet, NULL as misc_snippet,
-                        NULL as works_snippet, NULL as research_experience_snippet,
-                        NULL as education_snippet, NULL as committee_memberships_snippet,
-                        NULL as teaching_experience_snippet, NULL as association_memberships_snippet
+                        f.papers_text, f.books_text, f.presentations_text,
+                        f.awards_text, f.research_interests_text, f.research_areas_text,
+                        f.research_projects_text, f.misc_text, f.works_text,
+                        f.research_experience_text, f.education_text,
+                        f.committee_memberships_text, f.teaching_experience_text,
+                        f.association_memberships_text
                     FROM researchers_fts f
                     JOIN researchers r ON r.id = f.id
                     WHERE (
@@ -131,8 +166,34 @@ class Database:
 
         # 結果を辞書に変換
         results = []
+        # LIKE検索用のテキスト→スニペットマッピング
+        text_to_snippet_map = {
+            'papers_text': 'papers_snippet',
+            'books_text': 'books_snippet',
+            'presentations_text': 'presentations_snippet',
+            'awards_text': 'awards_snippet',
+            'research_interests_text': 'research_interests_snippet',
+            'research_areas_text': 'research_areas_snippet',
+            'research_projects_text': 'research_projects_snippet',
+            'misc_text': 'misc_snippet',
+            'works_text': 'works_snippet',
+            'research_experience_text': 'research_experience_snippet',
+            'education_text': 'education_snippet',
+            'committee_memberships_text': 'committee_memberships_snippet',
+            'teaching_experience_text': 'teaching_experience_snippet',
+            'association_memberships_text': 'association_memberships_snippet',
+        }
+
         for row in rows:
             result = dict(row)
+
+            # LIKE検索の場合、テキストからスニペットを生成
+            if query and use_like_search:
+                for text_col, snippet_col in text_to_snippet_map.items():
+                    if text_col in result:
+                        text = result.pop(text_col)  # テキスト列を削除
+                        result[snippet_col] = generate_snippet(text, query)
+
             # researchmap_dataをJSONとしてパース
             if result.get('researchmap_data'):
                 try:
