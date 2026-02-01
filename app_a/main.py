@@ -19,7 +19,9 @@ ROOT_PATH = os.environ.get("NIHU_RM_ROOT_PATH", "")
 # FastAPIアプリケーション作成
 app = FastAPI(
     title="NIHU Researcher Search",
-    description="人間文化研究機構 研究者検索システム",
+    description="人間文化研究機構 研究者検索システム API\n\n"
+                f"🔗 [検索画面を開く]({ROOT_PATH}/)" if ROOT_PATH else
+                "人間文化研究機構 研究者検索システム API",
     version="1.0.0",
     root_path=ROOT_PATH,
     docs_url="/docs",

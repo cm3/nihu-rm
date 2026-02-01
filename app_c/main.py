@@ -50,6 +50,9 @@ ROOT_PATH = os.environ.get("NIHU_RM_ROOT_PATH", "")
 
 app = FastAPI(
     title="researchmap → Excel 変換",
+    description="researchmap データを機構IR様式の Excel に変換する API\n\n"
+                f"🔗 [変換画面を開く]({ROOT_PATH}/)" if ROOT_PATH else
+                "researchmap データを機構IR様式の Excel に変換する API",
     root_path=ROOT_PATH,
     docs_url="/docs",
     openapi_url="/openapi.json",
