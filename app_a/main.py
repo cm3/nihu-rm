@@ -10,7 +10,6 @@ from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from fastapi.middleware.cors import CORSMiddleware
 
 from .routers import researchers
 
@@ -25,15 +24,6 @@ app = FastAPI(
     root_path=ROOT_PATH,
     docs_url="/docs",
     openapi_url="/openapi.json",
-)
-
-# CORS設定
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
 )
 
 # 静的ファイルとテンプレート設定

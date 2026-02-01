@@ -331,8 +331,8 @@ app_c/main.py            ← Web API から呼び出し
 ### セキュリティ
 
 - 個人データを含むファイルは gitignore 対象です
-- 本番環境では CORS 設定を適切に制限してください
 - 認証機能は未実装です
+- 外部ドメインから API を呼ぶ場合は nginx で CORS ヘッダーを設定してください
 
 ### researchmap API
 
