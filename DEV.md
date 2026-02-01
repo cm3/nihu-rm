@@ -88,6 +88,20 @@ fetch('/api/users')
 fetch('api/users')
 ```
 
+#### CSS 内の URL（注意）
+
+CSS 内の `url()` は **CSS ファイルの位置を基準** に解決される（HTML ページではない）。
+
+```css
+/* static/css/style.css から static/images/anon.png を参照 */
+
+/* NG: 絶対パス */
+background-image: url('/static/images/anon.png');
+
+/* OK: CSSファイルからの相対パス */
+background-image: url('../images/anon.png');
+```
+
 #### 解決の仕組み
 
 ```
@@ -153,6 +167,7 @@ fetch(`${API_BASE}/api/users`)
 - [ ] nginx の `proxy_pass` 末尾に `/` があるか
 - [ ] FastAPI に `root_path` を設定しているか
 - [ ] HTML の静的ファイル参照が相対パスか（先頭に `/` がないか）
+- [ ] CSS 内の `url()` が CSS ファイル基準の相対パスか
 - [ ] JavaScript の fetch が相対パスか
 - [ ] API レスポンスの URL が相対パスか
 - [ ] `/docs` と `/openapi.json` がサブパス配下で動作するか
