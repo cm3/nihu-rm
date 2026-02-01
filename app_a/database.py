@@ -85,16 +85,18 @@ class Database:
                 JOIN researchers r ON r.id = researchers_fts.id
                 WHERE researchers_fts MATCH ?
             """
+            # SQLを再構築するのでparamsもリセット（fts_queryから始める）
+            params = [fts_query]
             # 機関とイニシャルのフィルターを追加
             if org1:
                 sql += " AND r.org1 = ?"
+                params.append(org1)
             if org2:
                 sql += " AND r.org2 = ?"
+                params.append(org2)
             if initial:
                 sql += " AND r.name_en LIKE ?"
                 params.append(f"{initial}%")
-
-            params = [fts_query] + params
 
         # ソートとページネーション
         sql += " ORDER BY name_en ASC LIMIT ? OFFSET ?"
@@ -157,14 +159,17 @@ class Database:
                 JOIN researchers r ON r.id = researchers_fts.id
                 WHERE researchers_fts MATCH ?
             """
+            # SQLを再構築するのでparamsもリセット（fts_queryから始める）
+            params = [fts_query]
             if org1:
                 sql += " AND r.org1 = ?"
+                params.append(org1)
             if org2:
                 sql += " AND r.org2 = ?"
+                params.append(org2)
             if initial:
                 sql += " AND r.name_en LIKE ?"
                 params.append(f"{initial}%")
-            params = [fts_query] + params
 
         cursor.execute(sql, params)
         result = cursor.fetchone()
