@@ -290,7 +290,7 @@ function renderResults(data) {
                     items.forEach(item => {
                         // 業績のURLを検索
                         const sectionType = snippetToSectionMap[field];
-                        const url = sectionType ? findAchievementUrl(item.trim(), researcher.researchmap_data, sectionType, researcher.id) : null;
+                        const url = sectionType ? findAchievementUrl(item.trim(), researcher.achievements_summary, sectionType) : null;
 
                         snippets.push({
                             label,
@@ -416,148 +416,61 @@ const snippetToSectionMap = {
     'association_memberships_snippet': 'association_memberships'
 };
 
-// スニペットから業績IDを検索してURLを生成
-function findAchievementUrl(snippetText, researchmapData, sectionType, userId) {
-    if (!researchmapData) {
-        return null;
-    }
-
-    // トップレベルのセクションから検索（FTS5の元データ）
-    // @graphは厳選された一部のみなので使用しない
-    const section = researchmapData[sectionType];
-    if (!section || !section.items) {
+// スニペットから業績URLを検索
+// achievementsSummary: [{s: "section", ja: "タイトル", en: "Title", u: "URL"}, ...]
+function findAchievementUrl(snippetText, achievementsSummary, sectionType) {
+    if (!achievementsSummary || !Array.isArray(achievementsSummary)) {
         return null;
     }
 
     // スニペットからmarkタグを除去してクリーンなテキストを取得
     const cleanSnippet = snippetText.replace(/<\/?mark>/g, '').trim();
 
-    // 各業績をチェック
-    for (const item of section.items) {
-        // 業績のテキスト表現を構築（setup_db.pyと同じロジック）
-        const parts = [];
+    // セクションでフィルタリング
+    const sectionItems = achievementsSummary.filter(item => item.s === sectionType);
 
-        // タイトル
-        for (const titleKey of ['paper_title', 'title', 'award_title', 'presentation_title', 'name', 'work_title']) {
-            if (item[titleKey]) {
-                const titleObj = item[titleKey];
-                if (typeof titleObj === 'object') {
-                    if (titleObj.ja) parts.push(titleObj.ja);
-                    else if (titleObj.en) parts.push(titleObj.en);
-                } else if (typeof titleObj === 'string') {
-                    parts.push(titleObj);
-                }
-                if (parts.length > 0) break;
-            }
+    for (const item of sectionItems) {
+        // 日本語タイトルでマッチング
+        if (item.ja && matchTitle(cleanSnippet, item.ja)) {
+            return item.u || null;
         }
-
-        // 著者名
-        if (item.authors && typeof item.authors === 'object') {
-            for (const lang of ['ja', 'en']) {
-                if (Array.isArray(item.authors[lang])) {
-                    const authorNames = item.authors[lang]
-                        .slice(0, 3)
-                        .map(a => a.name)
-                        .filter(Boolean);
-                    if (authorNames.length > 0) {
-                        parts.push(authorNames.join(' '));
-                        break;
-                    }
-                }
-            }
-        }
-
-        // 出版社・刊行物名（書籍の場合に重要）
-        for (const pubKey of ['publisher', 'publication_name']) {
-            if (item[pubKey]) {
-                const pubObj = item[pubKey];
-                if (typeof pubObj === 'object') {
-                    if (pubObj.ja) parts.push(pubObj.ja);
-                    else if (pubObj.en) parts.push(pubObj.en);
-                } else if (typeof pubObj === 'string') {
-                    parts.push(pubObj);
-                }
-            }
-        }
-
-        // 説明文（description, abstract, summary など）
-        for (const descKey of ['description', 'abstract', 'summary']) {
-            if (item[descKey]) {
-                const descObj = item[descKey];
-                if (typeof descObj === 'object') {
-                    if (descObj.ja) parts.push(descObj.ja);
-                    else if (descObj.en) parts.push(descObj.en);
-                } else if (typeof descObj === 'string') {
-                    parts.push(descObj);
-                }
-            }
-        }
-
-        const itemText = parts.join(' ');
-
-        // マッチング判定（より柔軟に）
-        if (itemText) {
-            // 方法1: 各パーツ（タイトル、著者、出版社など）の主要部分がスニペットに含まれているか
-            for (const part of parts) {
-                if (part && part.length >= 10) {
-                    // 冒頭からのマッチング（最大40文字）
-                    for (let len = Math.min(40, part.length); len >= 10; len -= 5) {
-                        const partSubstr = part.substring(0, len);
-                        if (cleanSnippet.includes(partSubstr)) {
-                            const rmId = item['rm:id'];
-                            if (rmId) {
-                                return `https://researchmap.jp/${userId}/${sectionType}/${rmId}`;
-                            }
-                        }
-                    }
-
-                    // 中間部分からのマッチング（publication_nameなど長いフィールド用）
-                    if (part.length >= 30) {
-                        for (let start = 0; start <= part.length - 20; start += 5) {
-                            for (let len = Math.min(35, part.length - start); len >= 20; len -= 5) {
-                                const partSubstr = part.substring(start, start + len);
-                                if (cleanSnippet.includes(partSubstr)) {
-                                    const rmId = item['rm:id'];
-                                    if (rmId) {
-                                        return `https://researchmap.jp/${userId}/${sectionType}/${rmId}`;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            const titlePart = parts[0]; // タイトル（方法3で使用）
-
-            // 方法2: スニペットの主要部分が業績テキストに含まれているか
-            // スニペットが "..." で始まる場合はスキップ（冒頭が切り取られている）
-            if (!cleanSnippet.startsWith('...') && cleanSnippet.length >= 20) {
-                const snippetStart = cleanSnippet.substring(0, Math.min(50, cleanSnippet.length));
-                if (itemText.includes(snippetStart)) {
-                    const rmId = item['rm:id'];
-                    if (rmId) {
-                        return `https://researchmap.jp/${userId}/${sectionType}/${rmId}`;
-                    }
-                }
-            }
-
-            // 方法3: タイトルの中間部分とスニペットの中間部分を比較
-            // （スニペットが"..."で始まる場合や、タイトルが長い場合に有効）
-            if (titlePart && titlePart.length >= 15) {
-                // タイトルから10文字以降の部分を抽出（最大30文字）
-                const titleMid = titlePart.substring(Math.min(10, titlePart.length - 15), Math.min(40, titlePart.length));
-                if (titleMid.length >= 10 && cleanSnippet.includes(titleMid)) {
-                    const rmId = item['rm:id'];
-                    if (rmId) {
-                        return `https://researchmap.jp/${userId}/${sectionType}/${rmId}`;
-                    }
-                }
-            }
+        // 英語タイトルでマッチング
+        if (item.en && matchTitle(cleanSnippet, item.en)) {
+            return item.u || null;
         }
     }
 
     return null;
+}
+
+// タイトルとスニペットのマッチング判定
+function matchTitle(snippet, title) {
+    if (!title || title.length < 5) return false;
+
+    // 方法1: タイトルの一部（10文字以上）がスニペットに含まれているか
+    for (let len = Math.min(40, title.length); len >= 10; len -= 5) {
+        if (snippet.includes(title.substring(0, len))) {
+            return true;
+        }
+    }
+
+    // 方法2: スニペットの主要部分がタイトルに含まれているか
+    if (!snippet.startsWith('...') && snippet.length >= 15) {
+        const snippetStart = snippet.substring(0, Math.min(40, snippet.length));
+        if (title.includes(snippetStart)) {
+            return true;
+        }
+    }
+
+    // 方法3: タイトルの中間部分とスニペットを比較
+    if (title.length >= 20) {
+        const titleMid = title.substring(10, Math.min(50, title.length));
+        if (titleMid.length >= 10 && snippet.includes(titleMid)) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 // ページネーションをレンダリング

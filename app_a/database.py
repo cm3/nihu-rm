@@ -123,13 +123,13 @@ class Database:
                 result[f"{name}_snippet"] = generate_snippet(text, query)
         return result
 
-    def _parse_researchmap_data(self, result: dict) -> dict:
-        """researchmap_data をJSONとしてパース"""
-        if result.get('researchmap_data'):
+    def _parse_achievements_summary(self, result: dict) -> dict:
+        """achievements_summary をJSONとしてパース"""
+        if result.get('achievements_summary'):
             try:
-                result['researchmap_data'] = json.loads(result['researchmap_data'])
+                result['achievements_summary'] = json.loads(result['achievements_summary'])
             except json.JSONDecodeError:
-                result['researchmap_data'] = None
+                result['achievements_summary'] = []
         return result
 
     def search_researchers(
@@ -190,7 +190,7 @@ class Database:
             result = dict(row)
             if query and use_like_search:
                 result = self._convert_text_to_snippets(result, query)
-            result = self._parse_researchmap_data(result)
+            result = self._parse_achievements_summary(result)
             results.append(result)
 
         conn.close()
@@ -262,5 +262,5 @@ class Database:
         conn.close()
 
         if row:
-            return self._parse_researchmap_data(dict(row))
+            return self._parse_achievements_summary(dict(row))
         return None

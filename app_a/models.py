@@ -16,7 +16,7 @@ class Researcher(BaseModel):
     org2: Optional[str] = None
     position: str
     researchmap_url: str
-    researchmap_data: Optional[Any] = None
+    achievements_summary: Optional[list] = None
     papers_snippet: Optional[str] = None
     books_snippet: Optional[str] = None
     presentations_snippet: Optional[str] = None

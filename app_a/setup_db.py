@@ -9,6 +9,8 @@ import json
 import sqlite3
 from pathlib import Path
 
+from .achievement_config import extract_achievements_summary
+
 
 def create_database(db_path: Path):
     """データベースとテーブルを作成"""
@@ -30,7 +32,7 @@ def create_database(db_path: Path):
             org2 TEXT,
             position TEXT,
             researchmap_url TEXT NOT NULL,
-            researchmap_data TEXT,
+            achievements_summary TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
@@ -248,17 +250,19 @@ def import_json_data(db_path: Path, json_dir: Path):
         with open(json_file, 'r', encoding='utf-8') as f:
             data = json.load(f)
 
-        # ResearchMapデータをJSON文字列として保存
         researchmap_data = data.get('researchmap_data')
-        researchmap_data_str = json.dumps(researchmap_data, ensure_ascii=False)
 
-        # 業績テキストを抽出
+        # 業績サマリーを抽出（軽量版）
+        achievements_summary = extract_achievements_summary(researchmap_data)
+        achievements_summary_str = json.dumps(achievements_summary, ensure_ascii=False)
+
+        # 業績テキストを抽出（FTS用、著者名等を含む完全版）
         achievement_texts = extract_achievement_texts(researchmap_data)
 
         # 基本データをINSERT
         cursor.execute('''
             INSERT OR REPLACE INTO researchers
-            (id, name_ja, name_en, avatar_url, org1, org2, position, researchmap_url, researchmap_data)
+            (id, name_ja, name_en, avatar_url, org1, org2, position, researchmap_url, achievements_summary)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             data['id'],
@@ -269,7 +273,7 @@ def import_json_data(db_path: Path, json_dir: Path):
             data.get('org2', ''),
             data['position'],
             data['researchmap_url'],
-            researchmap_data_str
+            achievements_summary_str
         ))
 
         # FTS5テーブルを手動で更新（業績データを含める）
