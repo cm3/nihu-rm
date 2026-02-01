@@ -343,4 +343,12 @@ app_c/main.py            ← Web API から呼び出し
 
 ## ライセンス
 
-MIT License - 詳細は [LICENSE](LICENSE) を参照してください。
+MIT License
+
+Copyright (c) 2026 National Institutes for the Humanities
+
+詳細は [LICENSE](LICENSE) を参照してください。
+
+## 貢献者
+
+このプロジェクトへの貢献者については [CONTRIBUTORS.md](CONTRIBUTORS.md) を参照してください。
