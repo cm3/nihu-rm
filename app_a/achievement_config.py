@@ -29,6 +29,7 @@ TITLE_FIELDS = [
     'title',
     'award_title',
     'presentation_title',
+    'research_project_title',
     'name',
     'work_title',
     'research_field',
@@ -45,10 +46,20 @@ KEEP_FIELDS = {
     'publication_name': False,  # 出版物名
     'publication_date': False,  # 出版日
     'url': True,                # researchmap URL
+    'summary': True,            # 説明文（マッチング用）
 }
 
 # テキスト長制限
 MAX_TITLE_LENGTH = 200
+MAX_SUMMARY_LENGTH = 300  # マッチング用
+
+# 説明文抽出に使うフィールド（優先順位順）
+SUMMARY_FIELDS = [
+    'summary',
+    'description',
+    'content',
+    'outline',
+]
 
 
 def extract_achievements_summary(researchmap_data: dict) -> list:
@@ -56,7 +67,7 @@ def extract_achievements_summary(researchmap_data: dict) -> list:
     researchmap_data から軽量な業績サマリーを抽出
 
     Returns:
-        [{"s": "section", "ja": "日本語タイトル", "en": "English title", "u": "URL"}, ...]
+        [{"s": "section", "ja": "日本語タイトル", "en": "English title", "d": "説明文", "u": "URL"}, ...]
     """
     if not researchmap_data:
         return []
@@ -87,6 +98,21 @@ def extract_achievements_summary(researchmap_data: dict) -> list:
                         if KEEP_FIELDS['title_ja']:
                             entry['ja'] = title_obj[:MAX_TITLE_LENGTH]
                     break
+
+            # 説明文抽出（マッチング用）
+            if KEEP_FIELDS.get('summary'):
+                for field in SUMMARY_FIELDS:
+                    if field in item:
+                        summary_obj = item[field]
+                        if isinstance(summary_obj, dict):
+                            summary_text = summary_obj.get('ja', '') or summary_obj.get('en', '')
+                        elif isinstance(summary_obj, str):
+                            summary_text = summary_obj
+                        else:
+                            summary_text = ''
+                        if summary_text:
+                            entry['d'] = summary_text[:MAX_SUMMARY_LENGTH]
+                            break
 
             # URL
             if KEEP_FIELDS['url']:

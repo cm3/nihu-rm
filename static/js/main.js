@@ -417,7 +417,7 @@ const snippetToSectionMap = {
 };
 
 // スニペットから業績URLを検索
-// achievementsSummary: [{s: "section", ja: "タイトル", en: "Title", u: "URL"}, ...]
+// achievementsSummary: [{s: "section", ja: "タイトル", en: "Title", d: "説明文", u: "URL"}, ...]
 function findAchievementUrl(snippetText, achievementsSummary, sectionType) {
     if (!achievementsSummary || !Array.isArray(achievementsSummary)) {
         return null;
@@ -438,42 +438,53 @@ function findAchievementUrl(snippetText, achievementsSummary, sectionType) {
         if (item.en && matchTitle(cleanSnippet, item.en)) {
             return item.u || null;
         }
+        // 説明文でマッチング
+        if (item.d && matchTitle(cleanSnippet, item.d)) {
+            return item.u || null;
+        }
     }
 
     return null;
 }
 
-// タイトルとスニペットのマッチング判定
-function matchTitle(snippet, title) {
-    if (!title || title.length < 3) return false;
+// タイトル/説明文とスニペットのマッチング判定
+function matchTitle(snippet, text) {
+    if (!text || text.length < 3) return false;
 
-    // 方法0: 短いタイトル（5-9文字）の完全一致チェック
-    if (title.length >= 5 && title.length < 10) {
-        if (snippet.includes(title)) {
+    // スニペットから "..." を除去
+    const cleanSnippet = snippet.replace(/^\.\.\./, '').replace(/\.\.\.+$/, '').trim();
+    if (cleanSnippet.length < 5) return false;
+
+    // 方法0: 短いテキスト（5-9文字）の完全一致チェック
+    if (text.length >= 5 && text.length < 10) {
+        if (cleanSnippet.includes(text)) {
             return true;
         }
     }
 
-    // 方法1: タイトルの一部（10文字以上）がスニペットに含まれているか
-    for (let len = Math.min(40, title.length); len >= 10; len -= 5) {
-        if (snippet.includes(title.substring(0, len))) {
+    // 方法1: テキストの冒頭部分がスニペットに含まれているか
+    for (let len = Math.min(40, text.length); len >= 10; len -= 5) {
+        if (cleanSnippet.includes(text.substring(0, len))) {
             return true;
         }
     }
 
-    // 方法2: スニペットの主要部分がタイトルに含まれているか
-    if (!snippet.startsWith('...') && snippet.length >= 10) {
-        const snippetStart = snippet.substring(0, Math.min(40, snippet.length));
-        if (title.includes(snippetStart)) {
+    // 方法2: スニペットの主要部分がテキストに含まれているか
+    if (cleanSnippet.length >= 10) {
+        const snippetStart = cleanSnippet.substring(0, Math.min(40, cleanSnippet.length));
+        if (text.includes(snippetStart)) {
             return true;
         }
     }
 
-    // 方法3: タイトルの中間部分とスニペットを比較
-    if (title.length >= 20) {
-        const titleMid = title.substring(10, Math.min(50, title.length));
-        if (titleMid.length >= 10 && snippet.includes(titleMid)) {
-            return true;
+    // 方法3: テキストの中間部分とスニペットを比較（説明文用）
+    if (text.length >= 30) {
+        // 20文字ごとにスライドしてチェック
+        for (let start = 0; start <= text.length - 15; start += 20) {
+            const textChunk = text.substring(start, Math.min(start + 30, text.length));
+            if (textChunk.length >= 10 && cleanSnippet.includes(textChunk)) {
+                return true;
+            }
         }
     }
 
