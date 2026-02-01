@@ -445,7 +445,14 @@ function findAchievementUrl(snippetText, achievementsSummary, sectionType) {
 
 // タイトルとスニペットのマッチング判定
 function matchTitle(snippet, title) {
-    if (!title || title.length < 5) return false;
+    if (!title || title.length < 3) return false;
+
+    // 方法0: 短いタイトル（5-9文字）の完全一致チェック
+    if (title.length >= 5 && title.length < 10) {
+        if (snippet.includes(title)) {
+            return true;
+        }
+    }
 
     // 方法1: タイトルの一部（10文字以上）がスニペットに含まれているか
     for (let len = Math.min(40, title.length); len >= 10; len -= 5) {
@@ -455,7 +462,7 @@ function matchTitle(snippet, title) {
     }
 
     // 方法2: スニペットの主要部分がタイトルに含まれているか
-    if (!snippet.startsWith('...') && snippet.length >= 15) {
+    if (!snippet.startsWith('...') && snippet.length >= 10) {
         const snippetStart = snippet.substring(0, Math.min(40, snippet.length));
         if (title.includes(snippetStart)) {
             return true;
