@@ -343,4 +343,4 @@ app_c/main.py            ← Web API から呼び出し
 
 ## ライセンス
 
-このプロジェクトは人間文化研究機構のために作成されました。
+MIT License - 詳細は [LICENSE](LICENSE) を参照してください。
