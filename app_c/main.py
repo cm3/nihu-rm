@@ -202,8 +202,15 @@ def convert_json_to_csvs(json_data: dict, output_dir: Path, researcher_id: str) 
     return csv_files
 
 
-def convert_csvs_to_excel(csv_dir: Path, output_dir: Path, researcher_id: str) -> Path:
-    """CSV を Excel に変換（create_researcher_excel 関数を直接呼び出し）"""
+def convert_csvs_to_excel(csv_dir: Path, output_dir: Path, researcher_id: str, fiscal_year: int = None) -> Path:
+    """CSV を Excel に変換（create_researcher_excel 関数を直接呼び出し）
+
+    Args:
+        csv_dir: CSVファイルのディレクトリ
+        output_dir: 出力ディレクトリ
+        researcher_id: 研究者ID
+        fiscal_year: 年度フィルタ（例: 2023 = 2023年4月〜2024年3月）、Noneでフィルタなし
+    """
     import importlib.util
 
     xlsx_dir = output_dir / "xlsx"
@@ -228,11 +235,16 @@ def convert_csvs_to_excel(csv_dir: Path, output_dir: Path, researcher_id: str) -
 
     # Excel 作成
     try:
-        csv_to_excel.create_researcher_excel(researcher_id, category_files, xlsx_dir)
+        csv_to_excel.create_researcher_excel(researcher_id, category_files, xlsx_dir, fiscal_year=fiscal_year)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Excel 変換エラー: {e}")
 
-    xlsx_path = xlsx_dir / f"{researcher_id}.xlsx"
+    # 出力ファイルパスを決定
+    if fiscal_year:
+        xlsx_path = xlsx_dir / f"{researcher_id}_{fiscal_year}年度.xlsx"
+    else:
+        xlsx_path = xlsx_dir / f"{researcher_id}.xlsx"
+
     if not xlsx_path.exists():
         raise HTTPException(status_code=500, detail=f"Excel ファイルが生成されませんでした")
 
@@ -270,11 +282,25 @@ async def get_allowed_ids():
 @app.post("/api/convert")
 async def convert(
     researcher_id: str = Form(...),
+    fiscal_year: str = Form(None),
     background_tasks: BackgroundTasks = None
 ):
-    """研究者 ID から Excel を生成"""
+    """研究者 ID から Excel を生成
+
+    Args:
+        researcher_id: researchmap の研究者 ID
+        fiscal_year: 年度フィルタ（例: "2023" = 2023年4月〜2024年3月）、空文字または None でフィルタなし
+    """
     # バリデーション
     researcher_id = validate_researcher_id(researcher_id)
+
+    # 年度フィルタのパース
+    fiscal_year_int = None
+    if fiscal_year and fiscal_year.strip():
+        try:
+            fiscal_year_int = int(fiscal_year.strip())
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"年度の形式が不正です: {fiscal_year}")
 
     # 作業ディレクトリ作成
     work_id = str(uuid.uuid4())[:8]
@@ -289,8 +315,8 @@ async def convert(
         csv_dir = work_path / "csv"
         csv_files = convert_json_to_csvs(json_data, work_path, researcher_id)
 
-        # 3. CSV → Excel 変換
-        xlsx_path = convert_csvs_to_excel(csv_dir, work_path, researcher_id)
+        # 3. CSV → Excel 変換（年度フィルタ適用）
+        xlsx_path = convert_csvs_to_excel(csv_dir, work_path, researcher_id, fiscal_year=fiscal_year_int)
 
         if not xlsx_path.exists():
             raise HTTPException(status_code=500, detail="Excel ファイルの生成に失敗しました")
@@ -308,7 +334,8 @@ async def convert(
             "researcher_id": researcher_id,
             "name": name,
             "erad_id": erad_id,
-            "download_url": f"api/download/{work_id}/{researcher_id}.xlsx",
+            "fiscal_year": fiscal_year_int,
+            "download_url": f"api/download/{work_id}/{xlsx_path.name}",
             "csv_count": len(csv_files),
         }
 

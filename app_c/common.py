@@ -245,10 +245,13 @@ def join_names(maybe_people: Any, delim: str = ",") -> str:
 # Choice (code : label) helpers
 # =========================
 
-def choice(code: Any, label: Any, sep: str = ":") -> str:
+def choice(code: Any, label: Any, sep: str = " : ") -> str:
     """
-    Excel 入力規則選択肢セルに入れるための "code:label" を生成。
+    Excel 入力規則選択肢セルに入れるための "code : label" を生成。
     code/label のどちらかが空なら空文字（未回答）を返す。
+
+    sep のデフォルトは " : "（スペースあり）。
+    「その他」シートのみ ":" （スペースなし）を使用。
     """
     c = str(code).strip() if code is not None else ""
     l = str(label).strip() if label is not None else ""
@@ -257,12 +260,15 @@ def choice(code: Any, label: Any, sep: str = ":") -> str:
     return f"{c}{sep}{l}"
 
 
-def map_choice(value: Any, mapping: Mapping[str, Tuple[str, str]], *, default: str = "") -> str:
+def map_choice(value: Any, mapping: Mapping[str, Tuple[str, str]], *, default: str = "", sep: str = " : ") -> str:
     """
     researchmap 側の列挙値（value）を、Excel 側の "code : label" に変換する汎用 mapper。
 
     mapping は:
       { "researchmap_value": ("code", "label"), ... }
+
+    sep のデフォルトは " : "（スペースあり）。
+    「その他」シートのみ ":" （スペースなし）を使用。
     """
     if value is None:
         return default
@@ -272,7 +278,7 @@ def map_choice(value: Any, mapping: Mapping[str, Tuple[str, str]], *, default: s
     pair = mapping.get(key)
     if not pair:
         return default
-    return choice(pair[0], pair[1])
+    return choice(pair[0], pair[1], sep=sep)
 
 
 # =========================
@@ -852,7 +858,7 @@ SONOTA_BOOK_ROLE_CHOICES: Dict[str, Tuple[str, str]] = {
 
 def sonota_type_from_books_role(value: Any) -> str:
     """
-    books_etc.book_owner_role → 'code : label'
+    books_etc.book_owner_role → 'code:label'（「その他」シート用、スペースなし）
     仕様:
       - others / 未選択(空/None) → 99:その他
       - それ以外は空文字（その他CSVに入れる対象外のため）
@@ -878,13 +884,13 @@ SONOTA_WORK_TYPE_CHOICES: Dict[str, Tuple[str, str]] = {
 }
 
 def sonota_type_from_work_type(value: Any) -> str:
-    """works.work_type → 'code : label'（未知/未設定は 99:その他）"""
+    """works.work_type → 'code:label'（未知/未設定は 99:その他）"""
     if value is None:
         return "99:その他"
     s = str(value).strip()
     if not s:
         return "99:その他"
-    return map_choice(s, SONOTA_WORK_TYPE_CHOICES, default="99:その他")
+    return map_choice(s, SONOTA_WORK_TYPE_CHOICES, default="99:その他", sep=":")
 
 
 # メディア報道: media_coverage_type
@@ -898,13 +904,13 @@ SONOTA_MEDIA_COVERAGE_TYPE_CHOICES: Dict[str, Tuple[str, str]] = {
 }
 
 def sonota_type_from_media_coverage_type(value: Any) -> str:
-    """media_coverage.media_coverage_type → 'code : label'（未知/未設定は 99:その他）"""
+    """media_coverage.media_coverage_type → 'code:label'（未知/未設定は 99:その他）"""
     if value is None:
         return "99:その他"
     s = str(value).strip()
     if not s:
         return "99:その他"
-    return map_choice(s, SONOTA_MEDIA_COVERAGE_TYPE_CHOICES, default="99:その他")
+    return map_choice(s, SONOTA_MEDIA_COVERAGE_TYPE_CHOICES, default="99:その他", sep=":")
 
 
 # 学術貢献活動: academic_contribution_type
@@ -920,19 +926,20 @@ SONOTA_ACADEMIC_CONTRIBUTION_TYPE_CHOICES: Dict[str, Tuple[str, str]] = {
 }
 
 def sonota_type_from_academic_contribution_type(value: Any) -> str:
-    """academic_contribution.academic_contribution_type → 'code : label'（未知/未設定は 99:その他）"""
+    """academic_contribution.academic_contribution_type → 'code:label'（未知/未設定は 99:その他）"""
     if value is None:
         return "99:その他"
     s = str(value).strip()
     if not s:
         return "99:その他"
-    return map_choice(s, SONOTA_ACADEMIC_CONTRIBUTION_TYPE_CHOICES, default="99:その他")
+    return map_choice(s, SONOTA_ACADEMIC_CONTRIBUTION_TYPE_CHOICES, default="99:その他", sep=":")
 
 
 # 社会貢献活動: social_contribution_roles + social_contribution_type
 def sonota_type_from_social(roles: Any, social_contribution_type: Any) -> str:
     """
-    social_contribution_roles（役割）と social_contribution_type（種別）を組み合わせて 'code : label' を返す。
+    social_contribution_roles（役割）と social_contribution_type（種別）を組み合わせて 'code:label' を返す。
+    （「その他」シート用、スペースなし）
 
     Excel指示:
       - lecturer → 31:社会貢献（出前授業）

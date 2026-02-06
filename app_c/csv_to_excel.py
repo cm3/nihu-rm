@@ -456,15 +456,95 @@ def parse_date_value(value):
     return value
 
 
-def read_csv_file(filepath):
-    """CSVファイルを読み込んでデータを返す"""
+def get_fiscal_year_range(fiscal_year):
+    """年度の開始日・終了日を返す（YYYYMMDD整数）
+
+    Args:
+        fiscal_year: 年度（例: 2023 → 2023/4/1〜2024/3/31）
+
+    Returns:
+        (start_date, end_date) タプル、または None（フィルタなしの場合）
+    """
+    if fiscal_year is None:
+        return None
+    fy = int(fiscal_year)
+    start_date = fy * 10000 + 401      # 20230401
+    end_date = (fy + 1) * 10000 + 331  # 20240331
+    return (start_date, end_date)
+
+
+def is_in_fiscal_year(date_value, fiscal_year_range):
+    """日付が年度範囲内かどうかを判定
+
+    Args:
+        date_value: YYYYMMDD形式の日付（整数または文字列）
+        fiscal_year_range: (start_date, end_date) タプル
+
+    Returns:
+        True: 範囲内、False: 範囲外、None: 日付が不明
+    """
+    if fiscal_year_range is None:
+        return True  # フィルタなし
+
+    if not date_value:
+        return None  # 日付不明
+
+    # 整数に変換
+    date_int = parse_date_value(date_value)
+    if date_int is None or not isinstance(date_int, int):
+        return None
+
+    start_date, end_date = fiscal_year_range
+    return start_date <= date_int <= end_date
+
+
+def get_date_csv_columns(structure):
+    """シート構造から日付列のCSVカラム名を取得"""
+    date_col_nums = set(structure.get('date_columns', []))
+    csv_col_names = []
+    for col_num, header2, header3, color, csv_col in structure['columns']:
+        if col_num in date_col_nums and csv_col:
+            csv_col_names.append(csv_col)
+    return csv_col_names
+
+
+def read_csv_file(filepath, fiscal_year_range=None, date_csv_columns=None):
+    """CSVファイルを読み込んでデータを返す
+
+    Args:
+        filepath: CSVファイルパス
+        fiscal_year_range: 年度範囲 (start_date, end_date) または None
+        date_csv_columns: フィルタ対象の日付列名リスト
+
+    Returns:
+        フィルタ済みのデータリスト
+    """
     data = []
     with open(filepath, 'r', encoding='utf-8-sig') as f:
         reader = csv.DictReader(f)
         for row in reader:
             # 空行をスキップ
-            if any(v.strip() for v in row.values() if v):
-                data.append(row)
+            if not any(v.strip() for v in row.values() if v):
+                continue
+
+            # 年度フィルタ
+            if fiscal_year_range and date_csv_columns:
+                # 日付列から最も適切な値を取得（複数ある場合は最初のものを使用）
+                date_value = None
+                for col_name in date_csv_columns:
+                    if col_name in row and row[col_name]:
+                        # 範囲形式（例: "20230401-20240331"）の場合は開始日を使用
+                        val = row[col_name].split('-')[0].strip()
+                        if val and val != '現在':
+                            date_value = val
+                            break
+
+                in_range = is_in_fiscal_year(date_value, fiscal_year_range)
+                # None（日付不明）の場合は含める、False（範囲外）の場合は除外
+                if in_range is False:
+                    continue
+
+            data.append(row)
     return data
 
 
@@ -640,12 +720,22 @@ def get_researcher_files(csv_dir):
     return researchers
 
 
-def create_researcher_excel(researcher_id, category_files, output_dir):
-    """研究者のExcelファイルを作成"""
+def create_researcher_excel(researcher_id, category_files, output_dir, fiscal_year=None):
+    """研究者のExcelファイルを作成
+
+    Args:
+        researcher_id: 研究者ID
+        category_files: カテゴリ名 -> CSVファイルパスの辞書
+        output_dir: 出力ディレクトリ
+        fiscal_year: 年度フィルタ（例: 2023 = 2023年4月1日〜2024年3月31日）、Noneでフィルタなし
+    """
     wb = Workbook()
     # デフォルトシートを削除
     if 'Sheet' in wb.sheetnames:
         del wb['Sheet']
+
+    # 年度範囲を計算
+    fiscal_year_range = get_fiscal_year_range(fiscal_year)
 
     # シート順序を保持
     sheet_order = ['論文', '分担執筆', '単著', '共著・編著', '口頭発表', 'MISC', 'その他']
@@ -658,27 +748,49 @@ def create_researcher_excel(researcher_id, category_files, output_dir):
                 csv_category = csv_cat
                 break
 
-        # CSVデータを読み込む
+        # シート構造を取得
+        structure = SHEET_STRUCTURES.get(sheet_name)
+        if not structure:
+            continue
+
+        # CSVデータを読み込む（年度フィルタ適用）
         csv_data = None
         if csv_category and csv_category in category_files:
-            csv_data = read_csv_file(category_files[csv_category])
+            date_csv_columns = get_date_csv_columns(structure)
+            csv_data = read_csv_file(
+                category_files[csv_category],
+                fiscal_year_range=fiscal_year_range,
+                date_csv_columns=date_csv_columns
+            )
 
         # シートを作成
-        if sheet_name in SHEET_STRUCTURES:
-            create_sheet(wb, sheet_name, SHEET_STRUCTURES[sheet_name], csv_data)
+        create_sheet(wb, sheet_name, structure, csv_data)
 
     # ファイルを保存
-    output_path = Path(output_dir) / f'{researcher_id}.xlsx'
+    # 年度フィルタがある場合はファイル名に年度を付加
+    if fiscal_year:
+        output_path = Path(output_dir) / f'{researcher_id}_{fiscal_year}年度.xlsx'
+    else:
+        output_path = Path(output_dir) / f'{researcher_id}.xlsx'
     wb.save(output_path)
     print(f'Created: {output_path}')
     return output_path
 
 
 def main():
+    import argparse
+
+    parser = argparse.ArgumentParser(description='CSVファイル群をExcelファイルに変換')
+    parser.add_argument('--csv-dir', help='CSVファイルのディレクトリ')
+    parser.add_argument('--output-dir', help='出力ディレクトリ')
+    parser.add_argument('--fiscal-year', type=int, help='年度フィルタ（例: 2023 = 2023年4月〜2024年3月）')
+    args = parser.parse_args()
+
     # パス設定
     base_dir = Path(__file__).parent.parent.parent
-    csv_dir = base_dir / 'data' / 'csv'
-    output_dir = base_dir / 'data' / 'xlsx'
+    csv_dir = Path(args.csv_dir) if args.csv_dir else base_dir / 'data' / 'csv'
+    output_dir = Path(args.output_dir) if args.output_dir else base_dir / 'data' / 'xlsx'
+    fiscal_year = args.fiscal_year
 
     # 出力ディレクトリ作成
     output_dir.mkdir(exist_ok=True)
@@ -686,13 +798,16 @@ def main():
     # 研究者ごとのファイルを取得
     researchers = get_researcher_files(csv_dir)
 
+    if fiscal_year:
+        print(f'Fiscal year filter: {fiscal_year}年度 ({fiscal_year}/4/1 - {fiscal_year + 1}/3/31)')
+
     print(f'Found {len(researchers)} researchers:')
     for researcher_id in researchers:
         print(f'  - {researcher_id}: {list(researchers[researcher_id].keys())}')
 
     # 各研究者のExcelファイルを作成
     for researcher_id, category_files in researchers.items():
-        create_researcher_excel(researcher_id, category_files, output_dir)
+        create_researcher_excel(researcher_id, category_files, output_dir, fiscal_year=fiscal_year)
 
     print(f'\nAll files created in: {output_dir}')
 

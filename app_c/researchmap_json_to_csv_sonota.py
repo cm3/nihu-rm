@@ -173,7 +173,7 @@ def make_row(
 
     else:
         # 想定外の種類は「その他」として受け止める（勝手に詳細分類はしない）
-        type_cell = "99 : その他"
+        type_cell = "99:その他"
         overview = combine_title_and_desc(item.get("title"), item.get("description"))
         ymd = normalize_date_yyyymmdd(item.get("publication_date"))
 
