@@ -20,6 +20,21 @@ echo "==> git pull --ff-only"
 git fetch origin
 git pull --ff-only
 
+echo "==> check untracked files (except data/)"
+UNTRACKED=$(git clean -nd --exclude=data/)
+if [ -n "$UNTRACKED" ]; then
+  echo "WARNING: The following untracked files/directories will be removed:"
+  echo "$UNTRACKED"
+  read -p "Proceed with removal? [y/N] " -n 1 -r
+  echo
+  if [[ $REPLY =~ ^[Yy]$ ]]; then
+    git clean -fd --exclude=data/
+    echo "Removed."
+  else
+    echo "Skipped cleanup."
+  fi
+fi
+
 echo "==> install/refresh deps"
 "$VENV_DIR/bin/python" -m pip install -U pip wheel
 "$VENV_DIR/bin/python" -m pip install -r requirements.txt
