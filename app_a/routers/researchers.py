@@ -83,13 +83,17 @@ async def get_organizations():
     return organizations
 
 
-@router.get("/initial-counts")
-async def get_initial_counts(
-    query: Optional[str] = Query(None, description="検索クエリ"),
-    org: Optional[str] = Query(None, description="機関でフィルター（カンマ区切りでOR条件）")
+@router.get("/facet-counts")
+async def get_facet_counts(
+    query: Optional[str] = Query(None, description="検索クエリ")
 ):
     """
-    各イニシャルの研究者数を取得
+    イニシャル別・機関別の研究者数を取得
+
+    Returns:
+        {
+            "initials": {"A": 10, "B": 5, ...},
+            "orgs": {"歴博": 43, "国文研": 31, ...}
+        }
     """
-    counts = db.count_by_initial(query=query, org=org)
-    return counts
+    return db.get_facet_counts(query=query)

@@ -6,7 +6,8 @@ const state = {
     page: 1,
     pageSize: 50,
     organizations: [],
-    initialCounts: {}
+    initialCounts: {},
+    orgCounts: {}
 };
 
 // 初期化
@@ -14,7 +15,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     await loadOrganizations();
     loadStateFromUrl(); // URLパラメータから状態を復元
     setupEventListeners();
-    await loadInitialCounts(); // イニシャル別件数を読み込み
+    await loadFacetCounts(); // イニシャル別・機関別件数を読み込み
     await performSearch();
 });
 
@@ -55,18 +56,20 @@ async function loadOrganizations() {
     }
 }
 
-// イニシャル別件数を読み込み
-async function loadInitialCounts() {
+// イニシャル別・機関別件数を読み込み
+async function loadFacetCounts() {
     try {
         const params = new URLSearchParams();
         if (state.query) params.append('query', state.query);
-        // org はクライアントサイドでフィルタするためAPIには送らない
 
-        const response = await fetch(`api/initial-counts?${params}`);
-        state.initialCounts = await response.json();
+        const response = await fetch(`api/facet-counts?${params}`);
+        const data = await response.json();
+        state.initialCounts = data.initials;
+        state.orgCounts = data.orgs;
         updateInitialButtons();
+        updateOrgCheckboxes();
     } catch (error) {
-        console.error('Failed to load initial counts:', error);
+        console.error('Failed to load facet counts:', error);
     }
 }
 
@@ -87,6 +90,25 @@ function updateInitialButtons() {
                 button.disabled = false;
                 button.classList.remove('is_disabled');
             }
+        }
+    });
+}
+
+// 機関チェックボックスの状態を更新（件数0はグレーアウト）
+function updateOrgCheckboxes() {
+    document.querySelectorAll('#orgFilters input[type="checkbox"]').forEach(checkbox => {
+        const orgId = checkbox.value;
+        const count = state.orgCounts[orgId] || 0;
+        const label = checkbox.nextElementSibling;
+        const container = checkbox.closest('.kikan-check');
+
+        if (count === 0) {
+            checkbox.disabled = true;
+            checkbox.checked = false;
+            container.classList.add('is_disabled');
+        } else {
+            checkbox.disabled = false;
+            container.classList.remove('is_disabled');
         }
     });
 }
@@ -157,7 +179,7 @@ async function handleSearch() {
     state.query = document.getElementById('searchQuery').value;
     state.page = 1;
     updateUrl();
-    await loadInitialCounts(); // イニシャル件数を更新
+    await loadFacetCounts(); // イニシャル件数を更新
     performSearch();
 }
 
@@ -231,7 +253,7 @@ async function handleReset() {
     });
 
     updateUrl();
-    await loadInitialCounts(); // イニシャル件数を更新
+    await loadFacetCounts(); // イニシャル件数を更新
     performSearch();
 }
 
@@ -266,12 +288,22 @@ function applyOrgFilter() {
     const checkedInputs = document.querySelectorAll('#orgFilters input:checked');
     const allInputs = document.querySelectorAll('#orgFilters input[type="checkbox"]');
     const selectedOrgs = Array.from(checkedInputs).map(input => input.value);
-    const isAllSelected = checkedInputs.length === allInputs.length || checkedInputs.length === 0;
+
+    // 全てチェック → 全表示、一部チェック → フィルタ、全て未チェック → 全非表示
+    const isAllSelected = checkedInputs.length === allInputs.length;
+    const isNoneSelected = checkedInputs.length === 0;
 
     let visibleCount = 0;
     document.querySelectorAll('.bl_articleList_item').forEach(item => {
         const itemOrgs = (item.dataset.org || '').split(',').filter(o => o);
-        const isVisible = isAllSelected || itemOrgs.some(org => selectedOrgs.includes(org));
+        let isVisible;
+        if (isNoneSelected) {
+            isVisible = false;  // 全て未チェックなら全非表示
+        } else if (isAllSelected) {
+            isVisible = true;   // 全てチェックなら全表示
+        } else {
+            isVisible = itemOrgs.some(org => selectedOrgs.includes(org));
+        }
         item.classList.toggle('is_hidden', !isVisible);
         if (isVisible) visibleCount++;
     });

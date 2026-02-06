@@ -1,6 +1,6 @@
 # Excel入力制限 (Data Validation)
 
-`_sandbox/sample.xlsx` から抽出した入力制限値。
+`sample.xlsx` から抽出した入力制限値。
 
 ## 形式について
 

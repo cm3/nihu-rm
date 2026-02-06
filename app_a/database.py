@@ -253,16 +253,36 @@ class Database:
 
     def count_by_initial(
         self,
-        query: Optional[str] = None,
-        org: Optional[str] = None
+        query: Optional[str] = None
     ):
         """各イニシャルごとの研究者数を取得"""
         counts = {}
         for initial in 'ABCDEFGHIJKLMNOPQRSTUVWXYZ':
             counts[initial] = self.count_researchers(
-                query=query, org=org, initial=initial
+                query=query, initial=initial
             )
         return counts
+
+    def count_by_org(
+        self,
+        query: Optional[str] = None
+    ):
+        """各機関ごとの研究者数を取得（org1またはorg2に含まれる）"""
+        org_list = ['歴博', '国文研', '国語研', '日文研', '地球研', '民博']
+        counts = {}
+        for org_name in org_list:
+            counts[org_name] = self.count_researchers(query=query, org=org_name)
+        return counts
+
+    def get_facet_counts(
+        self,
+        query: Optional[str] = None
+    ):
+        """イニシャル別・機関別の件数を取得"""
+        return {
+            "initials": self.count_by_initial(query=query),
+            "orgs": self.count_by_org(query=query)
+        }
 
     def get_researcher_by_id(self, researcher_id: str):
         """IDで研究者を取得"""

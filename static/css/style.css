@@ -656,3 +656,13 @@ body {
 .bl_articleList_item.is_hidden {
     display: none;
 }
+
+/* 機関フィルターのグレーアウト */
+.kikan-check.is_disabled {
+    opacity: 0.4;
+    pointer-events: none;
+}
+
+.kikan-check.is_disabled label {
+    cursor: not-allowed;
+}
