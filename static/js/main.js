@@ -12,8 +12,8 @@ const state = {
 
 // 初期化
 document.addEventListener('DOMContentLoaded', async () => {
-    await loadOrganizations();
-    loadStateFromUrl(); // URLパラメータから状態を復元
+    loadStateFromUrl(); // URLパラメータから状態を復元（最初に実行）
+    await loadOrganizations(); // 機関リストを読み込み、state.orgsに基づいてチェック状態を設定
     setupEventListeners();
     await loadFacetCounts(); // イニシャル別・機関別件数を読み込み
     await performSearch();
@@ -25,8 +25,14 @@ function loadStateFromUrl() {
 
     if (params.has('query')) state.query = params.get('query');
     if (params.has('org')) {
-        // カンマ区切りの機関を配列に変換
-        state.orgs = params.get('org').split(',').filter(o => o.trim());
+        const orgValue = params.get('org');
+        if (orgValue === 'none') {
+            // 全部外し状態
+            state.orgs = ['none'];
+        } else {
+            // カンマ区切りの機関を配列に変換
+            state.orgs = orgValue.split(',').filter(o => o.trim());
+        }
     }
     if (params.has('initial')) state.initial = params.get('initial');
     if (params.has('page')) state.page = parseInt(params.get('page')) || 1;
@@ -94,18 +100,17 @@ function updateInitialButtons() {
     });
 }
 
-// 機関チェックボックスの状態を更新（件数0はグレーアウト）
+// 機関チェックボックスの状態を更新（件数0はグレーアウト、チェック状態は維持）
 function updateOrgCheckboxes() {
     document.querySelectorAll('#orgFilters input[type="checkbox"]').forEach(checkbox => {
         const orgId = checkbox.value;
         const count = state.orgCounts[orgId] || 0;
-        const label = checkbox.nextElementSibling;
         const container = checkbox.closest('.kikan-check');
 
         if (count === 0) {
             checkbox.disabled = true;
-            checkbox.checked = false;
             container.classList.add('is_disabled');
+            // チェック状態は維持（外さない）
         } else {
             checkbox.disabled = false;
             container.classList.remove('is_disabled');
@@ -117,12 +122,22 @@ function updateOrgCheckboxes() {
 function renderOrganizationFilters() {
     const container = document.getElementById('orgFilters');
 
-    // URLにorgパラメータがない場合は全機関をデフォルトでチェック
-    const allOrgIds = state.organizations.map(org => org.id);
+    // state.orgs の状態に応じてチェック状態を決定
+    // - [] (空配列): 全選択
+    // - ['none']: 全部外し
+    // - その他: 指定された機関のみ
     const isAllSelected = state.orgs.length === 0;
+    const isNoneSelected = state.orgs.length === 1 && state.orgs[0] === 'none';
 
     container.innerHTML = state.organizations.map(org => {
-        const isChecked = isAllSelected || state.orgs.includes(org.id);
+        let isChecked;
+        if (isNoneSelected) {
+            isChecked = false;  // 全部外し
+        } else if (isAllSelected) {
+            isChecked = true;   // 全選択
+        } else {
+            isChecked = state.orgs.includes(org.id);  // 一部選択
+        }
         return `
             <div class="kikan-check">
                 <input type="checkbox" id="org_${org.id}" value="${org.id}" data-org="${org.id}" ${isChecked ? 'checked' : ''}>
@@ -201,14 +216,18 @@ function handleInitialFilter(e) {
 
 // 機関フィルター（クライアントサイドでフィルタリング）
 function handleOrgFilterChange() {
-    // チェックされている機関を取得
-    const checkedInputs = document.querySelectorAll('#orgFilters input:checked');
-    const allInputs = document.querySelectorAll('#orgFilters input[type="checkbox"]');
+    // チェックされている機関を取得（disabledは除外）
+    const checkedInputs = document.querySelectorAll('#orgFilters input[type="checkbox"]:checked');
+    const enabledInputs = document.querySelectorAll('#orgFilters input[type="checkbox"]:not(:disabled)');
 
-    // 全てチェックされている場合はURLパラメータをクリア
-    if (checkedInputs.length === allInputs.length) {
+    if (checkedInputs.length === 0) {
+        // 全部外し → 'none' をセット
+        state.orgs = ['none'];
+    } else if (checkedInputs.length === enabledInputs.length && enabledInputs.length > 0) {
+        // 全選択 → 空配列（URLパラメータなし）
         state.orgs = [];
     } else {
+        // 一部選択
         state.orgs = Array.from(checkedInputs).map(input => input.value);
     }
     updateUrl();
@@ -219,17 +238,7 @@ function handleOrgFilterChange() {
 
 // 表示件数を更新
 function updateVisibleCount(visibleCount) {
-    const totalText = document.getElementById('resultCount').textContent;
-    // 元の総件数を保持しつつ、フィルタ後の件数を表示
-    const match = totalText.match(/(\d+)件/);
-    if (match) {
-        const total = parseInt(match[1]);
-        if (visibleCount < total) {
-            document.getElementById('resultCount').textContent = `${total}件中 ${visibleCount}件を表示`;
-        } else {
-            document.getElementById('resultCount').textContent = `${total}件の研究者が見つかりました`;
-        }
-    }
+    document.getElementById('resultCount').textContent = `${visibleCount}件の研究者が見つかりました`;
 }
 
 // リセット
@@ -285,13 +294,15 @@ async function performSearch() {
 
 // 機関フィルタを適用（表示/非表示の切り替え）
 function applyOrgFilter() {
-    const checkedInputs = document.querySelectorAll('#orgFilters input:checked');
-    const allInputs = document.querySelectorAll('#orgFilters input[type="checkbox"]');
+    // disabledでない（有効な）チェックボックスのみを対象にする
+    const enabledInputs = document.querySelectorAll('#orgFilters input[type="checkbox"]:not(:disabled)');
+    const checkedInputs = document.querySelectorAll('#orgFilters input[type="checkbox"]:checked');
     const selectedOrgs = Array.from(checkedInputs).map(input => input.value);
 
-    // 全てチェック → 全表示、一部チェック → フィルタ、全て未チェック → 全非表示
-    const isAllSelected = checkedInputs.length === allInputs.length;
-    const isNoneSelected = checkedInputs.length === 0;
+    // 有効なチェックボックスが全てチェックされているか
+    const isAllSelected = checkedInputs.length === enabledInputs.length && enabledInputs.length > 0;
+    // state.orgs が ['none'] または checkedInputs が 0 の場合は全非表示
+    const isNoneSelected = (state.orgs.length === 1 && state.orgs[0] === 'none') || checkedInputs.length === 0;
 
     let visibleCount = 0;
     document.querySelectorAll('.bl_articleList_item').forEach(item => {
@@ -338,48 +349,8 @@ function renderResults(data) {
     }
 
     container.innerHTML = researchers.map(researcher => {
-        // スニペットを取得
-        const snippets = [];
-        if (state.query) {
-            const snippetFields = [
-                { field: 'papers_snippet', label: '論文' },
-                { field: 'books_snippet', label: '書籍' },
-                { field: 'presentations_snippet', label: '発表' },
-                { field: 'awards_snippet', label: '受賞' },
-                { field: 'research_interests_snippet', label: '研究興味' },
-                { field: 'research_areas_snippet', label: '研究分野' },
-                { field: 'research_projects_snippet', label: '研究プロジェクト' },
-                { field: 'misc_snippet', label: 'その他業績' },
-                { field: 'works_snippet', label: '作品' },
-                { field: 'research_experience_snippet', label: '研究経験' },
-                { field: 'education_snippet', label: '学歴' },
-                { field: 'committee_memberships_snippet', label: '委員会活動' },
-                { field: 'teaching_experience_snippet', label: '教育経験' },
-                { field: 'association_memberships_snippet', label: '学会活動' }
-            ];
-
-            snippetFields.forEach(({ field, label }) => {
-                const snippetText = researcher[field];
-                if (snippetText && snippetText.includes('<mark>')) {
-                    // 区切り文字で分割して個別の業績として表示（最大3件）
-                    const items = snippetText.split('\n---\n')
-                        .filter(item => item.includes('<mark>'))
-                        .slice(0, 3);
-
-                    items.forEach(item => {
-                        // 業績のURLを検索
-                        const sectionType = snippetToSectionMap[field];
-                        const url = sectionType ? findAchievementUrl(item.trim(), researcher.achievements_summary, sectionType) : null;
-
-                        snippets.push({
-                            label,
-                            text: item.trim(),
-                            url: url
-                        });
-                    });
-                }
-            });
-        }
+        // スニペットはAPIから直接取得（URLも含まれている）
+        const snippets = researcher.snippets || [];
 
         // data-org: org1とorg2をカンマ区切りで結合（クライアントサイドフィルタ用）
         const orgs = [researcher.org1, researcher.org2].filter(o => o).join(',');
@@ -477,99 +448,6 @@ function renderOrgTags(org1, org2) {
         }
     }
     return tags.length > 0 ? `<div class="bl_researcher_tags">${tags.join('')}</div>` : '';
-}
-
-// スニペットフィールドとresearchmap JSONセクションのマッピング
-const snippetToSectionMap = {
-    'papers_snippet': 'published_papers',
-    'books_snippet': 'books_etc',
-    'presentations_snippet': 'presentations',
-    'awards_snippet': 'awards',
-    'research_interests_snippet': 'research_interests',
-    'research_areas_snippet': 'research_areas',
-    'research_projects_snippet': 'research_projects',
-    'misc_snippet': 'misc',
-    'works_snippet': 'works',
-    'research_experience_snippet': 'research_experience',
-    'education_snippet': 'education',
-    'committee_memberships_snippet': 'committee_memberships',
-    'teaching_experience_snippet': 'teaching_experience',
-    'association_memberships_snippet': 'association_memberships'
-};
-
-// スニペットから業績URLを検索
-// achievementsSummary: [{s: "section", ja: "タイトル", en: "Title", d: "説明文", u: "URL"}, ...]
-function findAchievementUrl(snippetText, achievementsSummary, sectionType) {
-    if (!achievementsSummary || !Array.isArray(achievementsSummary)) {
-        return null;
-    }
-
-    // スニペットからmarkタグを除去してクリーンなテキストを取得
-    const cleanSnippet = snippetText.replace(/<\/?mark>/g, '').trim();
-
-    // セクションでフィルタリング
-    const sectionItems = achievementsSummary.filter(item => item.s === sectionType);
-
-    for (const item of sectionItems) {
-        // 日本語タイトルでマッチング
-        if (item.ja && matchTitle(cleanSnippet, item.ja)) {
-            return item.u || null;
-        }
-        // 英語タイトルでマッチング
-        if (item.en && matchTitle(cleanSnippet, item.en)) {
-            return item.u || null;
-        }
-        // 説明文でマッチング
-        if (item.d && matchTitle(cleanSnippet, item.d)) {
-            return item.u || null;
-        }
-    }
-
-    return null;
-}
-
-// タイトル/説明文とスニペットのマッチング判定
-function matchTitle(snippet, text) {
-    if (!text || text.length < 3) return false;
-
-    // スニペットから "..." を除去
-    const cleanSnippet = snippet.replace(/^\.\.\./, '').replace(/\.\.\.+$/, '').trim();
-    if (cleanSnippet.length < 5) return false;
-
-    // 方法0: 短いテキスト（5-9文字）の完全一致チェック
-    if (text.length >= 5 && text.length < 10) {
-        if (cleanSnippet.includes(text)) {
-            return true;
-        }
-    }
-
-    // 方法1: テキストの冒頭部分がスニペットに含まれているか
-    for (let len = Math.min(40, text.length); len >= 10; len -= 5) {
-        if (cleanSnippet.includes(text.substring(0, len))) {
-            return true;
-        }
-    }
-
-    // 方法2: スニペットの主要部分がテキストに含まれているか
-    if (cleanSnippet.length >= 10) {
-        const snippetStart = cleanSnippet.substring(0, Math.min(40, cleanSnippet.length));
-        if (text.includes(snippetStart)) {
-            return true;
-        }
-    }
-
-    // 方法3: テキストの中間部分とスニペットを比較（説明文用）
-    if (text.length >= 30) {
-        // 20文字ごとにスライドしてチェック
-        for (let start = 0; start <= text.length - 15; start += 20) {
-            const textChunk = text.substring(start, Math.min(start + 30, text.length));
-            if (textChunk.length >= 10 && cleanSnippet.includes(textChunk)) {
-                return true;
-            }
-        }
-    }
-
-    return false;
 }
 
 // ページネーションをレンダリング

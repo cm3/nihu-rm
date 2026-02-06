@@ -3,13 +3,38 @@
 SQLiteデータベースの初期化スクリプト
 
 JSONデータをSQLiteデータベースにインポートします。
+業績データは個別のレコードとして保存し、URLと紐づけます。
 """
 
 import json
 import sqlite3
 from pathlib import Path
 
-from .achievement_config import extract_achievements_summary
+# セクション名のマッピング（researchmap API → 内部名）
+SECTION_MAP = {
+    'published_papers': 'papers',
+    'books_etc': 'books',
+    'presentations': 'presentations',
+    'awards': 'awards',
+    'research_interests': 'research_interests',
+    'research_areas': 'research_areas',
+    'research_projects': 'research_projects',
+    'misc': 'misc',
+    'works': 'works',
+    'research_experience': 'research_experience',
+    'education': 'education',
+    'committee_memberships': 'committee_memberships',
+    'teaching_experience': 'teaching_experience',
+    'association_memberships': 'association_memberships',
+}
+
+# タイトル抽出に使うフィールド（優先順位順）
+TITLE_FIELDS = [
+    'paper_title', 'title', 'award_title', 'presentation_title',
+    'research_project_title', 'name', 'work_title', 'research_field',
+    'subject', 'committee_name', 'association_name', 'organization_name',
+    'course_title', 'field',
+]
 
 
 def create_database(db_path: Path):
@@ -20,6 +45,8 @@ def create_database(db_path: Path):
     # 既存のテーブルを削除（クリーンな再構築のため）
     cursor.execute('DROP TABLE IF EXISTS researchers')
     cursor.execute('DROP TABLE IF EXISTS researchers_fts')
+    cursor.execute('DROP TABLE IF EXISTS achievements')
+    cursor.execute('DROP TABLE IF EXISTS achievements_fts')
 
     # 研究者テーブル
     cursor.execute('''
@@ -32,15 +59,25 @@ def create_database(db_path: Path):
             org2 TEXT,
             position TEXT,
             researchmap_url TEXT NOT NULL,
-            achievements_summary TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
 
-    # 全文検索用の仮想テーブル（FTS5）
-    # content=''で自己完結型にする（業績データはresearchersテーブルにないため）
-    # tokenize='trigram'で日本語（CJK）テキストに対応
-    # trigramは3文字のn-gramで分割するため、日本語の単語検索に適している
+    # 業績テーブル（個別エントリ）
+    cursor.execute('''
+        CREATE TABLE achievements (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            researcher_id TEXT NOT NULL,
+            section TEXT NOT NULL,
+            title_ja TEXT,
+            title_en TEXT,
+            text_content TEXT NOT NULL,
+            url TEXT,
+            FOREIGN KEY (researcher_id) REFERENCES researchers(id)
+        )
+    ''')
+
+    # 研究者の基本情報用FTS5（名前・所属での検索用）
     cursor.execute('''
         CREATE VIRTUAL TABLE researchers_fts USING fts5(
             id UNINDEXED,
@@ -49,193 +86,152 @@ def create_database(db_path: Path):
             org1,
             org2,
             position,
-            keywords,
-            papers_text,
-            books_text,
-            presentations_text,
-            awards_text,
-            research_interests_text,
-            research_areas_text,
-            research_projects_text,
-            misc_text,
-            works_text,
-            research_experience_text,
-            education_text,
-            committee_memberships_text,
-            teaching_experience_text,
-            association_memberships_text,
             tokenize='trigram'
         )
     ''')
 
-    # トリガーは使用しない（業績データを含むため手動で挿入）
-    # import_json_data()で直接FTS5テーブルにデータを挿入する
+    # 業績用FTS5（業績テキストの全文検索用）
+    cursor.execute('''
+        CREATE VIRTUAL TABLE achievements_fts USING fts5(
+            id UNINDEXED,
+            researcher_id UNINDEXED,
+            section UNINDEXED,
+            text_content,
+            tokenize='trigram'
+        )
+    ''')
 
     # インデックス作成
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_org1 ON researchers(org1)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_org2 ON researchers(org2)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_achievements_researcher ON achievements(researcher_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_achievements_section ON achievements(section)')
 
     conn.commit()
     conn.close()
     print(f"Database created: {db_path}")
 
 
-def extract_text_from_list(data_list, fields):
-    """リスト形式のデータからテキストを抽出"""
-    if not data_list or not isinstance(data_list, list):
-        return ""
+def extract_title(item: dict) -> tuple:
+    """アイテムからタイトル（日本語・英語）を抽出"""
+    title_ja = ''
+    title_en = ''
 
-    texts = []
-    for item in data_list:
-        if isinstance(item, dict):
-            for field in fields:
-                value = item.get(field, '')
-                if value:
-                    texts.append(str(value))
+    for field in TITLE_FIELDS:
+        if field in item:
+            title_obj = item[field]
+            if isinstance(title_obj, dict):
+                title_ja = title_obj.get('ja', '') or ''
+                title_en = title_obj.get('en', '') or ''
+                if title_ja or title_en:
+                    break
+            elif isinstance(title_obj, str):
+                title_ja = title_obj
+                break
 
-    return ' '.join(texts)
+    return title_ja[:500], title_en[:500]
 
 
-def extract_texts_from_researchmap_items(data, separator='\n---\n'):
-    """ResearchMapのitems配列からテキストを抽出（一行一業績）"""
-    if not data or not isinstance(data, dict):
-        return ""
+def extract_text_content(item: dict) -> str:
+    """アイテムから検索用テキストを抽出"""
+    parts = []
 
-    items = data.get('items', [])
-    if not isinstance(items, list):
-        return ""
+    # タイトル
+    title_ja, title_en = extract_title(item)
+    if title_ja:
+        parts.append(title_ja)
+    if title_en:
+        parts.append(title_en)
 
-    item_texts = []
-    for item in items:
-        if isinstance(item, dict):
-            parts = []
-
-            # タイトル・名称フィールド
-            for title_key in [
-                'paper_title', 'title', 'award_title', 'presentation_title', 'name',
-                'research_field', 'field', 'subject', 'organization_name', 'course_title',
-                'committee_name', 'association_name', 'work_title'
-            ]:
-                if title_key in item:
-                    title_obj = item[title_key]
-                    if isinstance(title_obj, dict):
-                        for lang in ['ja', 'en']:
-                            if lang in title_obj:
-                                parts.append(str(title_obj[lang]))
-                                break  # 最初の言語のみ
-                    elif isinstance(title_obj, str):
-                        parts.append(title_obj)
-                    if parts:  # タイトルが見つかったらbreak
-                        break
-
-            # 著者名
-            if 'authors' in item and isinstance(item['authors'], dict):
+    # 著者名
+    if 'authors' in item and isinstance(item['authors'], dict):
+        for lang in ['ja', 'en']:
+            if lang in item['authors'] and isinstance(item['authors'][lang], list):
                 authors = []
-                for lang in ['ja', 'en']:
-                    if lang in item['authors'] and isinstance(item['authors'][lang], list):
-                        for author in item['authors'][lang]:
-                            if isinstance(author, dict) and 'name' in author:
-                                authors.append(str(author['name']))
-                        if authors:
-                            break
+                for author in item['authors'][lang]:
+                    if isinstance(author, dict) and 'name' in author:
+                        authors.append(str(author['name']))
                 if authors:
-                    parts.append(' '.join(authors[:3]))  # 最大3名まで
-
-            # 出版物名・機関名
-            for pub_key in ['publication_name', 'publisher', 'affiliation', 'organization']:
-                if pub_key in item:
-                    pub_obj = item[pub_key]
-                    if isinstance(pub_obj, dict):
-                        for lang in ['ja', 'en']:
-                            if lang in pub_obj:
-                                parts.append(str(pub_obj[lang]))
-                                break
-                    elif isinstance(pub_obj, str):
-                        parts.append(pub_obj)
-
-            # 説明・要約（短縮版）
-            for desc_key in ['summary', 'description', 'content', 'outline']:
-                if desc_key in item:
-                    desc_obj = item[desc_key]
-                    desc_text = ''
-                    if isinstance(desc_obj, dict):
-                        for lang in ['ja', 'en']:
-                            if lang in desc_obj:
-                                desc_text = str(desc_obj[lang])
-                                break
-                    elif isinstance(desc_obj, str):
-                        desc_text = desc_obj
-                    if desc_text:
-                        # 要約は200文字まで
-                        parts.append(desc_text[:200])
-                        break
-
-            # 年度・期間
-            for date_key in ['publication_date', 'year', 'start_year', 'award_date']:
-                if date_key in item and item[date_key]:
-                    parts.append(str(item[date_key]))
+                    parts.append(' '.join(authors[:5]))
                     break
 
-            if parts:
-                item_texts.append(' '.join(parts))
+    # 出版物名・機関名
+    for pub_key in ['publication_name', 'publisher', 'affiliation', 'organization']:
+        if pub_key in item:
+            pub_obj = item[pub_key]
+            if isinstance(pub_obj, dict):
+                for lang in ['ja', 'en']:
+                    if lang in pub_obj and pub_obj[lang]:
+                        parts.append(str(pub_obj[lang]))
+                        break
+            elif isinstance(pub_obj, str) and pub_obj:
+                parts.append(pub_obj)
 
-    return separator.join(item_texts)
+    # 説明・要約
+    for desc_key in ['summary', 'description', 'content', 'outline']:
+        if desc_key in item:
+            desc_obj = item[desc_key]
+            desc_text = ''
+            if isinstance(desc_obj, dict):
+                desc_text = desc_obj.get('ja', '') or desc_obj.get('en', '')
+            elif isinstance(desc_obj, str):
+                desc_text = desc_obj
+            if desc_text:
+                parts.append(desc_text[:300])
+                break
+
+    # 年度
+    for date_key in ['publication_date', 'year', 'start_year', 'award_date']:
+        if date_key in item and item[date_key]:
+            parts.append(str(item[date_key]))
+            break
+
+    return ' / '.join(parts) if parts else ''
 
 
-def extract_achievement_texts(researchmap_data):
-    """ResearchMapデータから業績テキストを抽出"""
+def extract_url(item: dict) -> str:
+    """アイテムからURLを抽出"""
+    api_url = item.get('@id', '')
+    if api_url:
+        return api_url.replace('api.researchmap.jp', 'researchmap.jp')
+    return ''
+
+
+def extract_achievements(researchmap_data: dict, researcher_id: str) -> list:
+    """ResearchMapデータから業績リストを抽出"""
+    achievements = []
+
     if not researchmap_data:
-        return {
-            'papers': '', 'books': '', 'presentations': '', 'awards': '',
-            'research_interests': '', 'research_areas': '', 'research_projects': '',
-            'misc': '', 'works': '', 'research_experience': '', 'education': '',
-            'committee_memberships': '', 'teaching_experience': '', 'association_memberships': ''
-        }
+        return achievements
 
-    return {
-        # 論文
-        'papers': extract_texts_from_researchmap_items(
-            researchmap_data.get('published_papers', {}))[:10000],
-        # 書籍
-        'books': extract_texts_from_researchmap_items(
-            researchmap_data.get('books_etc', {}))[:10000],
-        # 発表
-        'presentations': extract_texts_from_researchmap_items(
-            researchmap_data.get('presentations', {}))[:10000],
-        # 受賞
-        'awards': extract_texts_from_researchmap_items(
-            researchmap_data.get('awards', {}))[:5000],
-        # 研究興味
-        'research_interests': extract_texts_from_researchmap_items(
-            researchmap_data.get('research_interests', {}))[:5000],
-        # 研究分野
-        'research_areas': extract_texts_from_researchmap_items(
-            researchmap_data.get('research_areas', {}))[:5000],
-        # 研究プロジェクト（科研費など）
-        'research_projects': extract_texts_from_researchmap_items(
-            researchmap_data.get('research_projects', {}))[:10000],
-        # その他の業績
-        'misc': extract_texts_from_researchmap_items(
-            researchmap_data.get('misc', {}))[:10000],
-        # 作品
-        'works': extract_texts_from_researchmap_items(
-            researchmap_data.get('works', {}))[:5000],
-        # 研究経験
-        'research_experience': extract_texts_from_researchmap_items(
-            researchmap_data.get('research_experience', {}))[:5000],
-        # 学歴
-        'education': extract_texts_from_researchmap_items(
-            researchmap_data.get('education', {}))[:5000],
-        # 委員会活動
-        'committee_memberships': extract_texts_from_researchmap_items(
-            researchmap_data.get('committee_memberships', {}))[:5000],
-        # 教育経験
-        'teaching_experience': extract_texts_from_researchmap_items(
-            researchmap_data.get('teaching_experience', {}))[:5000],
-        # 学会活動
-        'association_memberships': extract_texts_from_researchmap_items(
-            researchmap_data.get('association_memberships', {}))[:5000]
-    }
+    for api_section, internal_section in SECTION_MAP.items():
+        section_data = researchmap_data.get(api_section, {})
+        items = section_data.get('items', [])
+
+        if not isinstance(items, list):
+            continue
+
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+
+            text_content = extract_text_content(item)
+            if not text_content:
+                continue
+
+            title_ja, title_en = extract_title(item)
+            url = extract_url(item)
+
+            achievements.append({
+                'researcher_id': researcher_id,
+                'section': internal_section,
+                'title_ja': title_ja,
+                'title_en': title_en,
+                'text_content': text_content,
+                'url': url,
+            })
+
+    return achievements
 
 
 def import_json_data(db_path: Path, json_dir: Path):
@@ -246,26 +242,22 @@ def import_json_data(db_path: Path, json_dir: Path):
     json_files = list(json_dir.glob("*.json"))
     print(f"Found {len(json_files)} JSON files")
 
+    total_achievements = 0
+
     for json_file in json_files:
         with open(json_file, 'r', encoding='utf-8') as f:
             data = json.load(f)
 
+        researcher_id = data['id']
         researchmap_data = data.get('researchmap_data')
 
-        # 業績サマリーを抽出（軽量版）
-        achievements_summary = extract_achievements_summary(researchmap_data)
-        achievements_summary_str = json.dumps(achievements_summary, ensure_ascii=False)
-
-        # 業績テキストを抽出（FTS用、著者名等を含む完全版）
-        achievement_texts = extract_achievement_texts(researchmap_data)
-
-        # 基本データをINSERT
+        # 研究者基本情報をINSERT
         cursor.execute('''
             INSERT OR REPLACE INTO researchers
-            (id, name_ja, name_en, avatar_url, org1, org2, position, researchmap_url, achievements_summary)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (id, name_ja, name_en, avatar_url, org1, org2, position, researchmap_url)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
-            data['id'],
+            researcher_id,
             data['name_ja'],
             data['name_en'],
             data.get('avatar_url', ''),
@@ -273,46 +265,54 @@ def import_json_data(db_path: Path, json_dir: Path):
             data.get('org2', ''),
             data['position'],
             data['researchmap_url'],
-            achievements_summary_str
         ))
 
-        # FTS5テーブルを手動で更新（業績データを含める）
+        # 研究者FTSにINSERT
         cursor.execute('''
-            INSERT INTO researchers_fts(
-                id, name_ja, name_en, org1, org2, position, keywords,
-                papers_text, books_text, presentations_text, awards_text, research_interests_text,
-                research_areas_text, research_projects_text, misc_text, works_text,
-                research_experience_text, education_text, committee_memberships_text,
-                teaching_experience_text, association_memberships_text
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO researchers_fts(id, name_ja, name_en, org1, org2, position)
+            VALUES (?, ?, ?, ?, ?, ?)
         ''', (
-            data['id'],
+            researcher_id,
             data['name_ja'],
             data['name_en'],
             data.get('org1', ''),
             data.get('org2', ''),
             data['position'],
-            '',
-            achievement_texts['papers'],
-            achievement_texts['books'],
-            achievement_texts['presentations'],
-            achievement_texts['awards'],
-            achievement_texts['research_interests'],
-            achievement_texts['research_areas'],
-            achievement_texts['research_projects'],
-            achievement_texts['misc'],
-            achievement_texts['works'],
-            achievement_texts['research_experience'],
-            achievement_texts['education'],
-            achievement_texts['committee_memberships'],
-            achievement_texts['teaching_experience'],
-            achievement_texts['association_memberships']
         ))
+
+        # 業績を抽出してINSERT
+        achievements = extract_achievements(researchmap_data, researcher_id)
+        for ach in achievements:
+            cursor.execute('''
+                INSERT INTO achievements
+                (researcher_id, section, title_ja, title_en, text_content, url)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (
+                ach['researcher_id'],
+                ach['section'],
+                ach['title_ja'],
+                ach['title_en'],
+                ach['text_content'],
+                ach['url'],
+            ))
+
+            # 業績FTSにINSERT
+            achievement_id = cursor.lastrowid
+            cursor.execute('''
+                INSERT INTO achievements_fts(id, researcher_id, section, text_content)
+                VALUES (?, ?, ?, ?)
+            ''', (
+                achievement_id,
+                ach['researcher_id'],
+                ach['section'],
+                ach['text_content'],
+            ))
+
+        total_achievements += len(achievements)
 
     conn.commit()
     conn.close()
-    print(f"Imported {len(json_files)} researchers with achievement data")
+    print(f"Imported {len(json_files)} researchers with {total_achievements} achievements")
 
 
 def main():

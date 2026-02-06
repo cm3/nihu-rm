@@ -1,62 +1,72 @@
 """
 データベース接続とクエリ処理
+
+新しいテーブル構造:
+- researchers: 研究者基本情報
+- achievements: 業績（個別エントリ、URLと紐づけ）
+- researchers_fts: 研究者名・所属の全文検索
+- achievements_fts: 業績の全文検索
 """
 
 import re
 import sqlite3
-import json
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List, Dict, Any
 
 
-# FTS5カラムインデックス（snippet関数用）
-FTS_COLUMN_INDICES = {
-    'papers': 7,
-    'books': 8,
-    'presentations': 9,
-    'awards': 10,
-    'research_interests': 11,
-    'research_areas': 12,
-    'research_projects': 13,
-    'misc': 14,
-    'works': 15,
-    'research_experience': 16,
-    'education': 17,
-    'committee_memberships': 18,
-    'teaching_experience': 19,
-    'association_memberships': 20,
+# セクション名の日本語ラベル
+SECTION_LABELS = {
+    'papers': '論文',
+    'books': '書籍',
+    'presentations': '発表',
+    'awards': '受賞',
+    'research_interests': '研究興味',
+    'research_areas': '研究分野',
+    'research_projects': '研究プロジェクト',
+    'misc': 'その他業績',
+    'works': '作品',
+    'research_experience': '研究経験',
+    'education': '学歴',
+    'committee_memberships': '委員会活動',
+    'teaching_experience': '教育経験',
+    'association_memberships': '学会活動',
 }
-
-# LIKE検索対象カラム
-LIKE_SEARCH_COLUMNS = [
-    'name_ja', 'name_en', 'org1', 'org2', 'position',
-    'papers_text', 'books_text', 'presentations_text', 'misc_text', 'research_projects_text'
-]
 
 # trigram tokenizer の最小文字数
 MIN_FTS_QUERY_LENGTH = 3
 
 
-def generate_snippet(text: str, query: str, context_chars: int = 30) -> Optional[str]:
+def generate_snippet(text: str, query: str, context_chars: int = 50) -> str:
     """テキストからクエリを含むスニペットを生成"""
     if not text or not query:
-        return None
+        return text[:100] if text else ''
 
-    pos = text.lower().find(query.lower())
+    # クエリの各単語で検索
+    terms = query.split()
+    pos = -1
+    matched_term = query
+
+    for term in terms:
+        pos = text.lower().find(term.lower())
+        if pos != -1:
+            matched_term = term
+            break
+
     if pos == -1:
-        return None
+        return text[:100] + ('...' if len(text) > 100 else '')
 
     start = max(0, pos - context_chars)
-    end = min(len(text), pos + len(query) + context_chars)
+    end = min(len(text), pos + len(matched_term) + context_chars)
     snippet = text[start:end]
 
     if start > 0:
-        snippet = "..." + snippet
+        snippet = '...' + snippet
     if end < len(text):
-        snippet = snippet + "..."
+        snippet = snippet + '...'
 
-    pattern = re.compile(re.escape(query), re.IGNORECASE)
-    return pattern.sub(lambda m: f"<mark>{m.group()}</mark>", snippet)
+    # マッチした部分をハイライト
+    pattern = re.compile(re.escape(matched_term), re.IGNORECASE)
+    return pattern.sub(lambda m: f'<mark>{m.group()}</mark>', snippet)
 
 
 class Database:
@@ -83,60 +93,22 @@ class Database:
         terms = query.split()
         return ' OR '.join(terms) if len(terms) > 1 else query
 
-    def _build_snippet_columns(self) -> str:
-        """FTS5スニペット取得用のSELECT句を生成"""
-        snippets = []
-        for name, idx in FTS_COLUMN_INDICES.items():
-            snippets.append(
-                f"snippet(researchers_fts, {idx}, '<mark>', '</mark>', '...', 64) as {name}_snippet"
-            )
-        return ', '.join(snippets)
-
-    def _build_text_columns(self) -> str:
-        """LIKE検索用のテキストカラム取得SELECT句を生成"""
-        return ', '.join(f"f.{name}_text" for name in FTS_COLUMN_INDICES.keys())
-
-    def _build_like_conditions(self) -> str:
-        """LIKE検索のWHERE句を生成"""
-        conditions = [f"f.{col} LIKE ?" for col in LIKE_SEARCH_COLUMNS]
-        return ' OR '.join(conditions)
-
-    def _add_filters(self, sql: str, params: list, org: str, initial: str, prefix: str = 'r') -> tuple:
-        """org, initial フィルターを追加
-
-        Args:
-            org: カンマ区切りの機関名（例: "歴博,国文研"）
-                 org1またはorg2のいずれかが指定機関に一致するレコードを返す
-        """
+    def _add_org_filter(self, sql: str, params: list, org: str, prefix: str = 'r') -> tuple:
+        """org フィルターを追加"""
         if org:
-            # カンマで分割して複数機関のOR条件を生成
             org_list = [o.strip() for o in org.split(',') if o.strip()]
             if org_list:
                 placeholders = ','.join(['?' for _ in org_list])
                 sql += f" AND ({prefix}.org1 IN ({placeholders}) OR {prefix}.org2 IN ({placeholders}))"
-                params.extend(org_list * 2)  # org1用とorg2用で2回追加
+                params.extend(org_list * 2)
+        return sql, params
+
+    def _add_initial_filter(self, sql: str, params: list, initial: str, prefix: str = 'r') -> tuple:
+        """initial フィルターを追加"""
         if initial:
             sql += f" AND {prefix}.name_en LIKE ?"
             params.append(f"{initial}%")
         return sql, params
-
-    def _convert_text_to_snippets(self, result: dict, query: str) -> dict:
-        """テキストカラムをスニペットに変換"""
-        for name in FTS_COLUMN_INDICES.keys():
-            text_col = f"{name}_text"
-            if text_col in result:
-                text = result.pop(text_col)
-                result[f"{name}_snippet"] = generate_snippet(text, query)
-        return result
-
-    def _parse_achievements_summary(self, result: dict) -> dict:
-        """achievements_summary をJSONとしてパース"""
-        if result.get('achievements_summary'):
-            try:
-                result['achievements_summary'] = json.loads(result['achievements_summary'])
-            except json.JSONDecodeError:
-                result['achievements_summary'] = []
-        return result
 
     def search_researchers(
         self,
@@ -145,68 +117,127 @@ class Database:
         initial: Optional[str] = None,
         limit: int = 50,
         offset: int = 0
-    ):
-        """研究者を検索
-
-        Args:
-            query: 検索クエリ
-            org: 機関フィルター（カンマ区切りでOR条件）
-            initial: イニシャルフィルター
-            limit: 取得件数
-            offset: オフセット
-        """
+    ) -> List[Dict[str, Any]]:
+        """研究者を検索（業績スニペット付き）"""
         conn = self.get_connection()
         cursor = conn.cursor()
 
-        use_like_search = False
-
         if query:
+            # 業績テキストで検索し、マッチした研究者を取得
             if not self._is_short_query(query):
-                # FTS5で全文検索
                 fts_query = self._build_fts_query(query)
-                sql = f"""
-                    SELECT r.*, {self._build_snippet_columns()}
-                    FROM researchers_fts
-                    JOIN researchers r ON r.id = researchers_fts.id
-                    WHERE researchers_fts MATCH ?
+                # FTS5で業績を検索
+                sql = """
+                    SELECT DISTINCT a.researcher_id
+                    FROM achievements_fts af
+                    JOIN achievements a ON a.id = af.id
+                    JOIN researchers r ON r.id = a.researcher_id
+                    WHERE achievements_fts MATCH ?
                 """
                 params = [fts_query]
             else:
                 # LIKE検索にフォールバック
-                use_like_search = True
                 like_pattern = f"%{query}%"
-                sql = f"""
-                    SELECT r.*, {self._build_text_columns()}
-                    FROM researchers_fts f
-                    JOIN researchers r ON r.id = f.id
-                    WHERE ({self._build_like_conditions()})
+                sql = """
+                    SELECT DISTINCT a.researcher_id
+                    FROM achievements a
+                    JOIN researchers r ON r.id = a.researcher_id
+                    WHERE a.text_content LIKE ?
                 """
-                params = [like_pattern] * len(LIKE_SEARCH_COLUMNS)
+                params = [like_pattern]
 
-            sql, params = self._add_filters(sql, params, org, initial)
+            sql, params = self._add_org_filter(sql, params, org)
+            sql, params = self._add_initial_filter(sql, params, initial)
+            sql += " ORDER BY r.name_en ASC LIMIT ? OFFSET ?"
+            params.extend([limit, offset])
+
+            cursor.execute(sql, params)
+            researcher_ids = [row['researcher_id'] for row in cursor.fetchall()]
+
+            if not researcher_ids:
+                conn.close()
+                return []
+
+            # 研究者情報を取得
+            placeholders = ','.join(['?' for _ in researcher_ids])
+            cursor.execute(f"""
+                SELECT * FROM researchers WHERE id IN ({placeholders})
+                ORDER BY name_en ASC
+            """, researcher_ids)
+            researchers = [dict(row) for row in cursor.fetchall()]
+
+            # 各研究者のマッチした業績を取得（スニペット付き）
+            for researcher in researchers:
+                researcher['snippets'] = self._get_matching_achievements(
+                    cursor, researcher['id'], query, limit=5
+                )
+
         else:
             # クエリなし：基本検索
-            sql = "SELECT * FROM researchers WHERE 1=1"
+            sql = "SELECT * FROM researchers r WHERE 1=1"
             params = []
-            sql, params = self._add_filters(sql, params, org, initial, prefix='')
-            # prefixなしの場合はカラム名のみ
-            sql = sql.replace('.org1', 'org1').replace('.org2', 'org2').replace('.name_en', 'name_en')
+            sql, params = self._add_org_filter(sql, params, org, prefix='r')
+            sql, params = self._add_initial_filter(sql, params, initial, prefix='r')
+            sql += " ORDER BY name_en ASC LIMIT ? OFFSET ?"
+            params.extend([limit, offset])
 
-        sql += " ORDER BY name_en ASC LIMIT ? OFFSET ?"
-        params.extend([limit, offset])
+            cursor.execute(sql, params)
+            researchers = [dict(row) for row in cursor.fetchall()]
 
-        cursor.execute(sql, params)
-        rows = cursor.fetchall()
-
-        results = []
-        for row in rows:
-            result = dict(row)
-            if query and use_like_search:
-                result = self._convert_text_to_snippets(result, query)
-            result = self._parse_achievements_summary(result)
-            results.append(result)
+            # クエリなしの場合はスニペットなし
+            for researcher in researchers:
+                researcher['snippets'] = []
 
         conn.close()
+        return researchers
+
+    def _get_matching_achievements(
+        self,
+        cursor,
+        researcher_id: str,
+        query: str,
+        limit: int = 5
+    ) -> List[Dict[str, Any]]:
+        """研究者のマッチした業績を取得"""
+        if not self._is_short_query(query):
+            fts_query = self._build_fts_query(query)
+            cursor.execute("""
+                SELECT a.id, a.section, a.title_ja, a.title_en, a.text_content, a.url,
+                       snippet(achievements_fts, 3, '<mark>', '</mark>', '...', 64) as snippet_text
+                FROM achievements_fts af
+                JOIN achievements a ON a.id = af.id
+                WHERE af.researcher_id = ? AND achievements_fts MATCH ?
+                LIMIT ?
+            """, [researcher_id, fts_query, limit])
+        else:
+            like_pattern = f"%{query}%"
+            cursor.execute("""
+                SELECT id, section, title_ja, title_en, text_content, url
+                FROM achievements
+                WHERE researcher_id = ? AND text_content LIKE ?
+                LIMIT ?
+            """, [researcher_id, like_pattern, limit])
+
+        results = []
+        for row in cursor.fetchall():
+            row_dict = dict(row)
+            section = row_dict['section']
+
+            # スニペットテキストを生成
+            if 'snippet_text' in row_dict and row_dict['snippet_text']:
+                snippet_text = row_dict['snippet_text']
+            else:
+                snippet_text = generate_snippet(row_dict['text_content'], query)
+
+            results.append({
+                'section': section,
+                'label': SECTION_LABELS.get(section, section),
+                'text': snippet_text,
+                'url': row_dict['url'] or None,
+                'title_ja': row_dict['title_ja'],
+                'title_en': row_dict['title_en'],
+            })
+
         return results
 
     def count_researchers(
@@ -214,37 +245,39 @@ class Database:
         query: Optional[str] = None,
         org: Optional[str] = None,
         initial: Optional[str] = None
-    ):
+    ) -> int:
         """検索条件に一致する研究者数をカウント"""
         conn = self.get_connection()
         cursor = conn.cursor()
 
         if query:
             if not self._is_short_query(query):
-                # FTS5で全文検索
                 fts_query = self._build_fts_query(query)
                 sql = """
-                    SELECT COUNT(*) as count FROM researchers_fts
-                    JOIN researchers r ON r.id = researchers_fts.id
-                    WHERE researchers_fts MATCH ?
+                    SELECT COUNT(DISTINCT a.researcher_id) as count
+                    FROM achievements_fts af
+                    JOIN achievements a ON a.id = af.id
+                    JOIN researchers r ON r.id = a.researcher_id
+                    WHERE achievements_fts MATCH ?
                 """
                 params = [fts_query]
             else:
-                # LIKE検索にフォールバック
                 like_pattern = f"%{query}%"
-                sql = f"""
-                    SELECT COUNT(*) as count FROM researchers_fts f
-                    JOIN researchers r ON r.id = f.id
-                    WHERE ({self._build_like_conditions()})
+                sql = """
+                    SELECT COUNT(DISTINCT a.researcher_id) as count
+                    FROM achievements a
+                    JOIN researchers r ON r.id = a.researcher_id
+                    WHERE a.text_content LIKE ?
                 """
-                params = [like_pattern] * len(LIKE_SEARCH_COLUMNS)
+                params = [like_pattern]
 
-            sql, params = self._add_filters(sql, params, org, initial)
+            sql, params = self._add_org_filter(sql, params, org)
+            sql, params = self._add_initial_filter(sql, params, initial)
         else:
-            sql = "SELECT COUNT(*) as count FROM researchers WHERE 1=1"
+            sql = "SELECT COUNT(*) as count FROM researchers r WHERE 1=1"
             params = []
-            sql, params = self._add_filters(sql, params, org, initial, prefix='')
-            sql = sql.replace('.org1', 'org1').replace('.org2', 'org2').replace('.name_en', 'name_en')
+            sql, params = self._add_org_filter(sql, params, org, prefix='r')
+            sql, params = self._add_initial_filter(sql, params, initial, prefix='r')
 
         cursor.execute(sql, params)
         result = cursor.fetchone()
@@ -254,20 +287,18 @@ class Database:
     def count_by_initial(
         self,
         query: Optional[str] = None
-    ):
+    ) -> Dict[str, int]:
         """各イニシャルごとの研究者数を取得"""
         counts = {}
         for initial in 'ABCDEFGHIJKLMNOPQRSTUVWXYZ':
-            counts[initial] = self.count_researchers(
-                query=query, initial=initial
-            )
+            counts[initial] = self.count_researchers(query=query, initial=initial)
         return counts
 
     def count_by_org(
         self,
         query: Optional[str] = None
-    ):
-        """各機関ごとの研究者数を取得（org1またはorg2に含まれる）"""
+    ) -> Dict[str, int]:
+        """各機関ごとの研究者数を取得"""
         org_list = ['歴博', '国文研', '国語研', '日文研', '地球研', '民博']
         counts = {}
         for org_name in org_list:
@@ -277,14 +308,14 @@ class Database:
     def get_facet_counts(
         self,
         query: Optional[str] = None
-    ):
+    ) -> Dict[str, Any]:
         """イニシャル別・機関別の件数を取得"""
         return {
             "initials": self.count_by_initial(query=query),
             "orgs": self.count_by_org(query=query)
         }
 
-    def get_researcher_by_id(self, researcher_id: str):
+    def get_researcher_by_id(self, researcher_id: str) -> Optional[Dict[str, Any]]:
         """IDで研究者を取得"""
         conn = self.get_connection()
         cursor = conn.cursor()
@@ -293,5 +324,5 @@ class Database:
         conn.close()
 
         if row:
-            return self._parse_achievements_summary(dict(row))
+            return dict(row)
         return None

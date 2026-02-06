@@ -6,6 +6,16 @@ from typing import Optional, Any
 from pydantic import BaseModel
 
 
+class Snippet(BaseModel):
+    """業績スニペットモデル"""
+    section: str
+    label: str
+    text: str
+    url: Optional[str] = None
+    title_ja: Optional[str] = None
+    title_en: Optional[str] = None
+
+
 class Researcher(BaseModel):
     """研究者モデル"""
     id: str
@@ -16,21 +26,7 @@ class Researcher(BaseModel):
     org2: Optional[str] = None
     position: str
     researchmap_url: str
-    achievements_summary: Optional[list] = None
-    papers_snippet: Optional[str] = None
-    books_snippet: Optional[str] = None
-    presentations_snippet: Optional[str] = None
-    awards_snippet: Optional[str] = None
-    research_interests_snippet: Optional[str] = None
-    research_areas_snippet: Optional[str] = None
-    research_projects_snippet: Optional[str] = None
-    misc_snippet: Optional[str] = None
-    works_snippet: Optional[str] = None
-    research_experience_snippet: Optional[str] = None
-    education_snippet: Optional[str] = None
-    committee_memberships_snippet: Optional[str] = None
-    teaching_experience_snippet: Optional[str] = None
-    association_memberships_snippet: Optional[str] = None
+    snippets: Optional[list[Snippet]] = None
 
 
 class ResearcherListResponse(BaseModel):
@@ -44,8 +40,7 @@ class ResearcherListResponse(BaseModel):
 class SearchQuery(BaseModel):
     """検索クエリ"""
     query: Optional[str] = None
-    org1: Optional[str] = None
-    org2: Optional[str] = None
+    org: Optional[str] = None
     initial: Optional[str] = None
     page: int = 1
     page_size: int = 50
