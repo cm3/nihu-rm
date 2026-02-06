@@ -21,14 +21,14 @@ git fetch origin
 git pull --ff-only
 
 echo "==> check untracked files (except data/)"
-UNTRACKED=$(git clean -nd --exclude=data/)
+UNTRACKED=$(git clean -ndx --exclude=data/)
 if [ -n "$UNTRACKED" ]; then
   echo "WARNING: The following untracked files/directories will be removed:"
   echo "$UNTRACKED"
   read -p "Proceed with removal? [y/N] " -n 1 -r
   echo
   if [[ $REPLY =~ ^[Yy]$ ]]; then
-    git clean -fd --exclude=data/
+    git clean -fdx --exclude=data/
     echo "Removed."
   else
     echo "Skipped cleanup."
