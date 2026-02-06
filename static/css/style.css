@@ -651,3 +651,8 @@ body {
         width: 100%;
     }
 }
+
+/* クライアントサイドフィルタ用 */
+.bl_articleList_item.is_hidden {
+    display: none;
+}

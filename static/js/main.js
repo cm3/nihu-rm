@@ -60,7 +60,7 @@ async function loadInitialCounts() {
     try {
         const params = new URLSearchParams();
         if (state.query) params.append('query', state.query);
-        if (state.orgs.length > 0) params.append('org', state.orgs.join(','));
+        // org はクライアントサイドでフィルタするためAPIには送らない
 
         const response = await fetch(`api/initial-counts?${params}`);
         state.initialCounts = await response.json();
@@ -94,12 +94,20 @@ function updateInitialButtons() {
 // 機関フィルターをレンダリング
 function renderOrganizationFilters() {
     const container = document.getElementById('orgFilters');
-    container.innerHTML = state.organizations.map(org => `
-        <div class="kikan-check">
-            <input type="checkbox" id="org_${org.id}" value="${org.id}" data-org="${org.id}" ${state.orgs.includes(org.id) ? 'checked' : ''}>
-            <label for="org_${org.id}">${org.name}</label>
-        </div>
-    `).join('');
+
+    // URLにorgパラメータがない場合は全機関をデフォルトでチェック
+    const allOrgIds = state.organizations.map(org => org.id);
+    const isAllSelected = state.orgs.length === 0;
+
+    container.innerHTML = state.organizations.map(org => {
+        const isChecked = isAllSelected || state.orgs.includes(org.id);
+        return `
+            <div class="kikan-check">
+                <input type="checkbox" id="org_${org.id}" value="${org.id}" data-org="${org.id}" ${isChecked ? 'checked' : ''}>
+                <label for="org_${org.id}">${org.name}</label>
+            </div>
+        `;
+    }).join('');
 
     // チェックボックスのイベントリスナー
     container.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
@@ -169,16 +177,37 @@ function handleInitialFilter(e) {
     performSearch();
 }
 
-// 機関フィルター
-async function handleOrgFilterChange() {
-    // チェックされている機関を取得（複数選択をOR条件でサポート）
-    state.orgs = Array.from(document.querySelectorAll('#orgFilters input:checked'))
-        .map(input => input.value);
+// 機関フィルター（クライアントサイドでフィルタリング）
+function handleOrgFilterChange() {
+    // チェックされている機関を取得
+    const checkedInputs = document.querySelectorAll('#orgFilters input:checked');
+    const allInputs = document.querySelectorAll('#orgFilters input[type="checkbox"]');
 
-    state.page = 1;
+    // 全てチェックされている場合はURLパラメータをクリア
+    if (checkedInputs.length === allInputs.length) {
+        state.orgs = [];
+    } else {
+        state.orgs = Array.from(checkedInputs).map(input => input.value);
+    }
     updateUrl();
-    await loadInitialCounts(); // イニシャル件数を更新
-    performSearch();
+
+    // クライアントサイドで表示/非表示を切り替え（APIリクエスト不要）
+    applyOrgFilter();
+}
+
+// 表示件数を更新
+function updateVisibleCount(visibleCount) {
+    const totalText = document.getElementById('resultCount').textContent;
+    // 元の総件数を保持しつつ、フィルタ後の件数を表示
+    const match = totalText.match(/(\d+)件/);
+    if (match) {
+        const total = parseInt(match[1]);
+        if (visibleCount < total) {
+            document.getElementById('resultCount').textContent = `${total}件中 ${visibleCount}件を表示`;
+        } else {
+            document.getElementById('resultCount').textContent = `${total}件の研究者が見つかりました`;
+        }
+    }
 }
 
 // リセット
@@ -196,9 +225,9 @@ async function handleReset() {
     });
     document.querySelector('.filter-initial[data-initial=""]').classList.add('is_active');
 
-    // 機関チェックボックスをリセット
-    document.querySelectorAll('#orgFilters input:checked').forEach(input => {
-        input.checked = false;
+    // 機関チェックボックスを全てチェック（デフォルト状態に戻す）
+    document.querySelectorAll('#orgFilters input[type="checkbox"]').forEach(input => {
+        input.checked = true;
     });
 
     updateUrl();
@@ -211,7 +240,7 @@ async function performSearch() {
     const params = new URLSearchParams();
 
     if (state.query) params.append('query', state.query);
-    if (state.orgs.length > 0) params.append('org', state.orgs.join(','));
+    // org はクライアントサイドでフィルタするためAPIには送らない
     if (state.initial) params.append('initial', state.initial);
     params.append('page', state.page);
     params.append('page_size', state.pageSize);
@@ -223,10 +252,31 @@ async function performSearch() {
 
         renderResults(data);
         renderPagination(data);
+
+        // 検索結果表示後にクライアントサイドで機関フィルタを適用
+        applyOrgFilter();
     } catch (error) {
         showError('検索中にエラーが発生しました');
         console.error('Search error:', error);
     }
+}
+
+// 機関フィルタを適用（表示/非表示の切り替え）
+function applyOrgFilter() {
+    const checkedInputs = document.querySelectorAll('#orgFilters input:checked');
+    const allInputs = document.querySelectorAll('#orgFilters input[type="checkbox"]');
+    const selectedOrgs = Array.from(checkedInputs).map(input => input.value);
+    const isAllSelected = checkedInputs.length === allInputs.length || checkedInputs.length === 0;
+
+    let visibleCount = 0;
+    document.querySelectorAll('.bl_articleList_item').forEach(item => {
+        const itemOrgs = (item.dataset.org || '').split(',').filter(o => o);
+        const isVisible = isAllSelected || itemOrgs.some(org => selectedOrgs.includes(org));
+        item.classList.toggle('is_hidden', !isVisible);
+        if (isVisible) visibleCount++;
+    });
+
+    updateVisibleCount(visibleCount);
 }
 
 // ローディング表示
@@ -299,11 +349,13 @@ function renderResults(data) {
             });
         }
 
+        // data-org: org1とorg2をカンマ区切りで結合（クライアントサイドフィルタ用）
+        const orgs = [researcher.org1, researcher.org2].filter(o => o).join(',');
+
         return `
             <div class="bl_articleList_item"
                  data-name="${researcher.name_en}"
-                 data-kikan1="${researcher.org1 || ''}"
-                 data-kikan2="${researcher.org2 || ''}"
+                 data-org="${orgs}"
                  data-initial="${getInitial(researcher.name_en)}">
                 <div class="bl_researcher_main">
                     <div class="bl_researcher_left">
