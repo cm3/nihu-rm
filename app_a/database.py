@@ -101,14 +101,20 @@ class Database:
         conditions = [f"f.{col} LIKE ?" for col in LIKE_SEARCH_COLUMNS]
         return ' OR '.join(conditions)
 
-    def _add_filters(self, sql: str, params: list, org1: str, org2: str, initial: str, prefix: str = 'r') -> tuple:
-        """org1, org2, initial フィルターを追加"""
-        if org1:
-            sql += f" AND {prefix}.org1 = ?"
-            params.append(org1)
-        if org2:
-            sql += f" AND {prefix}.org2 = ?"
-            params.append(org2)
+    def _add_filters(self, sql: str, params: list, org: str, initial: str, prefix: str = 'r') -> tuple:
+        """org, initial フィルターを追加
+
+        Args:
+            org: カンマ区切りの機関名（例: "歴博,国文研"）
+                 org1またはorg2のいずれかが指定機関に一致するレコードを返す
+        """
+        if org:
+            # カンマで分割して複数機関のOR条件を生成
+            org_list = [o.strip() for o in org.split(',') if o.strip()]
+            if org_list:
+                placeholders = ','.join(['?' for _ in org_list])
+                sql += f" AND ({prefix}.org1 IN ({placeholders}) OR {prefix}.org2 IN ({placeholders}))"
+                params.extend(org_list * 2)  # org1用とorg2用で2回追加
         if initial:
             sql += f" AND {prefix}.name_en LIKE ?"
             params.append(f"{initial}%")
@@ -135,13 +141,20 @@ class Database:
     def search_researchers(
         self,
         query: Optional[str] = None,
-        org1: Optional[str] = None,
-        org2: Optional[str] = None,
+        org: Optional[str] = None,
         initial: Optional[str] = None,
         limit: int = 50,
         offset: int = 0
     ):
-        """研究者を検索"""
+        """研究者を検索
+
+        Args:
+            query: 検索クエリ
+            org: 機関フィルター（カンマ区切りでOR条件）
+            initial: イニシャルフィルター
+            limit: 取得件数
+            offset: オフセット
+        """
         conn = self.get_connection()
         cursor = conn.cursor()
 
@@ -170,12 +183,12 @@ class Database:
                 """
                 params = [like_pattern] * len(LIKE_SEARCH_COLUMNS)
 
-            sql, params = self._add_filters(sql, params, org1, org2, initial)
+            sql, params = self._add_filters(sql, params, org, initial)
         else:
             # クエリなし：基本検索
             sql = "SELECT * FROM researchers WHERE 1=1"
             params = []
-            sql, params = self._add_filters(sql, params, org1, org2, initial, prefix='')
+            sql, params = self._add_filters(sql, params, org, initial, prefix='')
             # prefixなしの場合はカラム名のみ
             sql = sql.replace('.org1', 'org1').replace('.org2', 'org2').replace('.name_en', 'name_en')
 
@@ -199,8 +212,7 @@ class Database:
     def count_researchers(
         self,
         query: Optional[str] = None,
-        org1: Optional[str] = None,
-        org2: Optional[str] = None,
+        org: Optional[str] = None,
         initial: Optional[str] = None
     ):
         """検索条件に一致する研究者数をカウント"""
@@ -227,11 +239,11 @@ class Database:
                 """
                 params = [like_pattern] * len(LIKE_SEARCH_COLUMNS)
 
-            sql, params = self._add_filters(sql, params, org1, org2, initial)
+            sql, params = self._add_filters(sql, params, org, initial)
         else:
             sql = "SELECT COUNT(*) as count FROM researchers WHERE 1=1"
             params = []
-            sql, params = self._add_filters(sql, params, org1, org2, initial, prefix='')
+            sql, params = self._add_filters(sql, params, org, initial, prefix='')
             sql = sql.replace('.org1', 'org1').replace('.org2', 'org2').replace('.name_en', 'name_en')
 
         cursor.execute(sql, params)
@@ -242,14 +254,13 @@ class Database:
     def count_by_initial(
         self,
         query: Optional[str] = None,
-        org1: Optional[str] = None,
-        org2: Optional[str] = None
+        org: Optional[str] = None
     ):
         """各イニシャルごとの研究者数を取得"""
         counts = {}
         for initial in 'ABCDEFGHIJKLMNOPQRSTUVWXYZ':
             counts[initial] = self.count_researchers(
-                query=query, org1=org1, org2=org2, initial=initial
+                query=query, org=org, initial=initial
             )
         return counts
 

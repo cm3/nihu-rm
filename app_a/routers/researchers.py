@@ -15,8 +15,7 @@ db = Database()
 @router.get("/researchers", response_model=ResearcherListResponse)
 async def search_researchers(
     query: Optional[str] = Query(None, description="検索クエリ（名前、役職、業績など）"),
-    org1: Optional[str] = Query(None, description="機関1でフィルター"),
-    org2: Optional[str] = Query(None, description="機関2でフィルター"),
+    org: Optional[str] = Query(None, description="機関でフィルター（カンマ区切りでOR条件、例: 歴博,国文研）"),
     initial: Optional[str] = Query(None, description="イニシャルでフィルター（A-Z）"),
     page: int = Query(1, ge=1, description="ページ番号"),
     page_size: int = Query(50, ge=1, le=100, description="ページサイズ")
@@ -25,8 +24,9 @@ async def search_researchers(
     研究者を検索
 
     - query: 全文検索クエリ
-    - org1: 機関1（機構本部、歴博、国文研、国語研、日文研、地球研、民博）
-    - org2: 機関2
+    - org: 機関フィルター（カンマ区切りでOR条件）
+      - 例: org=歴博 → org1またはorg2が「歴博」の研究者
+      - 例: org=歴博,国文研 → org1またはorg2が「歴博」または「国文研」の研究者
     - initial: イニシャル（A-Z、一文字）
     - page: ページ番号
     - page_size: 1ページあたりの件数
@@ -36,8 +36,7 @@ async def search_researchers(
     # 研究者を検索
     researchers = db.search_researchers(
         query=query,
-        org1=org1,
-        org2=org2,
+        org=org,
         initial=initial,
         limit=page_size,
         offset=offset
@@ -46,8 +45,7 @@ async def search_researchers(
     # 総件数を取得
     total = db.count_researchers(
         query=query,
-        org1=org1,
-        org2=org2,
+        org=org,
         initial=initial
     )
 
@@ -88,11 +86,10 @@ async def get_organizations():
 @router.get("/initial-counts")
 async def get_initial_counts(
     query: Optional[str] = Query(None, description="検索クエリ"),
-    org1: Optional[str] = Query(None, description="機関1でフィルター"),
-    org2: Optional[str] = Query(None, description="機関2でフィルター")
+    org: Optional[str] = Query(None, description="機関でフィルター（カンマ区切りでOR条件）")
 ):
     """
     各イニシャルの研究者数を取得
     """
-    counts = db.count_by_initial(query=query, org1=org1, org2=org2)
+    counts = db.count_by_initial(query=query, org=org)
     return counts

@@ -1,8 +1,7 @@
 // 状態管理
 const state = {
     query: '',
-    org1: '',
-    org2: '',
+    orgs: [],  // 複数機関を配列で管理（OR条件）
     initial: '',
     page: 1,
     pageSize: 50,
@@ -24,7 +23,10 @@ function loadStateFromUrl() {
     const params = new URLSearchParams(window.location.search);
 
     if (params.has('query')) state.query = params.get('query');
-    if (params.has('org')) state.org1 = params.get('org');
+    if (params.has('org')) {
+        // カンマ区切りの機関を配列に変換
+        state.orgs = params.get('org').split(',').filter(o => o.trim());
+    }
     if (params.has('initial')) state.initial = params.get('initial');
     if (params.has('page')) state.page = parseInt(params.get('page')) || 1;
 }
@@ -34,7 +36,7 @@ function updateUrl() {
     const params = new URLSearchParams();
 
     if (state.query) params.set('query', state.query);
-    if (state.org1) params.set('org', state.org1);
+    if (state.orgs.length > 0) params.set('org', state.orgs.join(','));
     if (state.initial) params.set('initial', state.initial);
     if (state.page > 1) params.set('page', state.page);
 
@@ -58,8 +60,7 @@ async function loadInitialCounts() {
     try {
         const params = new URLSearchParams();
         if (state.query) params.append('query', state.query);
-        if (state.org1) params.append('org1', state.org1);
-        if (state.org2) params.append('org2', state.org2);
+        if (state.orgs.length > 0) params.append('org', state.orgs.join(','));
 
         const response = await fetch(`api/initial-counts?${params}`);
         state.initialCounts = await response.json();
@@ -95,7 +96,7 @@ function renderOrganizationFilters() {
     const container = document.getElementById('orgFilters');
     container.innerHTML = state.organizations.map(org => `
         <div class="kikan-check">
-            <input type="checkbox" id="org_${org.id}" value="${org.id}" data-org="${org.id}" ${state.org1 === org.id ? 'checked' : ''}>
+            <input type="checkbox" id="org_${org.id}" value="${org.id}" data-org="${org.id}" ${state.orgs.includes(org.id) ? 'checked' : ''}>
             <label for="org_${org.id}">${org.name}</label>
         </div>
     `).join('');
@@ -170,12 +171,10 @@ function handleInitialFilter(e) {
 
 // 機関フィルター
 async function handleOrgFilterChange() {
-    // チェックされている機関を取得
-    const checkedOrgs = Array.from(document.querySelectorAll('#orgFilters input:checked'))
+    // チェックされている機関を取得（複数選択をOR条件でサポート）
+    state.orgs = Array.from(document.querySelectorAll('#orgFilters input:checked'))
         .map(input => input.value);
 
-    // org1を使用（複数選択可能だが、APIは単一のみサポート）
-    state.org1 = checkedOrgs.length > 0 ? checkedOrgs[0] : '';
     state.page = 1;
     updateUrl();
     await loadInitialCounts(); // イニシャル件数を更新
@@ -185,8 +184,7 @@ async function handleOrgFilterChange() {
 // リセット
 async function handleReset() {
     state.query = '';
-    state.org1 = '';
-    state.org2 = '';
+    state.orgs = [];
     state.initial = '';
     state.page = 1;
 
@@ -213,8 +211,7 @@ async function performSearch() {
     const params = new URLSearchParams();
 
     if (state.query) params.append('query', state.query);
-    if (state.org1) params.append('org1', state.org1);
-    if (state.org2) params.append('org2', state.org2);
+    if (state.orgs.length > 0) params.append('org', state.orgs.join(','));
     if (state.initial) params.append('initial', state.initial);
     params.append('page', state.page);
     params.append('page_size', state.pageSize);
