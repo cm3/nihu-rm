@@ -82,6 +82,79 @@ def get_endpoint_ja_label(endpoint: str) -> str:
 
 
 # =========================
+# Restrictions (Excel入力規則)
+# =========================
+
+_RESTRICTIONS_JSON = _DATA_DIR / "restrictions.json"
+_restrictions_cache: Dict[str, Any] | None = None
+
+
+def load_restrictions() -> Dict[str, Any]:
+    """
+    restrictions.json を読み込み、Excel入力規則データを返す。
+
+    Returns:
+        {
+            "_format": {"separator": " : ", "separator_nospace": ":"},
+            "論文": {"14_掲載種別": [["1", "論文（学術雑誌）"], ...], ...},
+            ...
+        }
+    """
+    global _restrictions_cache
+    if _restrictions_cache is not None:
+        return _restrictions_cache
+
+    if _RESTRICTIONS_JSON.exists():
+        with _RESTRICTIONS_JSON.open("r", encoding="utf-8") as f:
+            _restrictions_cache = json.load(f)
+    else:
+        _restrictions_cache = {"_format": {"separator": " : ", "separator_nospace": ":"}}
+
+    return _restrictions_cache
+
+
+def get_restriction_choices(sheet: str, column_key: str) -> List[Tuple[str, str]]:
+    """
+    指定シート・列の選択肢リストを取得。
+
+    Args:
+        sheet: シート名（例: "口頭発表"）
+        column_key: 列キー（例: "25_招待の有無"）
+
+    Returns:
+        [(code, label), ...] のリスト
+    """
+    data = load_restrictions()
+    sheet_data = data.get(sheet, {})
+    choices = sheet_data.get(column_key, [])
+    return [(c[0], c[1]) for c in choices]
+
+
+def get_restriction_separator(sheet: str) -> str:
+    """シートに応じたセパレータを取得"""
+    data = load_restrictions()
+    sheet_data = data.get(sheet, {})
+    use_nospace = sheet_data.get("_use_separator_nospace", False)
+    fmt = data.get("_format", {})
+    return fmt.get("separator_nospace", ":") if use_nospace else fmt.get("separator", " : ")
+
+
+def build_choice_string(code: str, label: str, separator: str = " : ") -> str:
+    """code と label からセパレータ付き選択肢文字列を生成"""
+    return f"{code}{separator}{label}"
+
+
+def _get_choice_by_code(sheet: str, column_key: str, code: str) -> str:
+    """restrictions.json から指定コードの選択肢文字列を取得"""
+    choices = get_restriction_choices(sheet, column_key)
+    sep = get_restriction_separator(sheet)
+    for c, label in choices:
+        if c == code:
+            return build_choice_string(c, label, sep)
+    return ""
+
+
+# =========================
 # Basic helpers
 # =========================
 
@@ -340,7 +413,7 @@ BOOL_YN_012 = {
 }
 
 def bool_to_choice_012(v: Any) -> str:
-    """null->'0:無回答', False->'2:いいえ', True->'1:はい'"""
+    """null->'0 : 無回答', False->'2 : いいえ', True->'1 : はい'"""
     return map_choice(bool_to_012(v), BOOL_YN_012)
 
 
@@ -351,7 +424,7 @@ REFEREE_12 = {
 }
 
 def referee_to_choice(v: Any) -> str:
-    """referee: null/False->'2:査読無し', True->'1:査読有り'"""
+    """referee: null/False->'2 : 査読無し', True->'1 : 査読有り'"""
     return map_choice(bool_to_12(v), REFEREE_12)
 
 
@@ -363,7 +436,7 @@ DOMESTIC_OVERSEAS_012 = {
 }
 
 def code_to_domestic_overseas_choice(code: Any) -> str:
-    """'0'/'1'/'2' を '0:無回答' / '1:国内' / '2:海外' にする。"""
+    """'0'/'1'/'2' を '0 : 無回答' / '1 : 国内' / '2 : 海外' にする。"""
     if code is None:
         return ""
     return map_choice(str(code).strip(), DOMESTIC_OVERSEAS_012)
@@ -673,7 +746,7 @@ def map_published_paper_owner_roles(value: Any) -> str:
     """
     published_paper_owner_roles → 'code : label'
     - list の場合は ' / ' で連結（順序維持・重複除去）
-    - 未選択（None/空/空配列）は '00:無回答'
+    - 未選択（None/空/空配列）は '00 : 無回答'
     """
     if value is None:
         return choice(*PUBLISHED_PAPER_OWNER_ROLE_UNSELECTED)
@@ -714,7 +787,7 @@ def book_type_choice(value: Any) -> str:
     books_etc.book_type → 'code : label'
     - None/空: 空文字（未入力）
     - 既知: 対応する 'code : label'
-    - 未知: 99:その他
+    - 未知: 99 : その他
     """
     if value is None:
         return ""
@@ -863,11 +936,12 @@ def sonota_type_from_books_role(value: Any) -> str:
       - others / 未選択(空/None) → 99:その他
       - それ以外は空文字（その他CSVに入れる対象外のため）
     """
+    other_choice = _get_choice_by_code("その他", "8_種別", "99")
     if value is None:
-        return "99:その他"
+        return other_choice
     s = str(value).strip()
     if not s or s == "others":
-        return "99:その他"
+        return other_choice
     return ""
 
 
@@ -885,12 +959,13 @@ SONOTA_WORK_TYPE_CHOICES: Dict[str, Tuple[str, str]] = {
 
 def sonota_type_from_work_type(value: Any) -> str:
     """works.work_type → 'code:label'（未知/未設定は 99:その他）"""
+    other_choice = _get_choice_by_code("その他", "8_種別", "99")
     if value is None:
-        return "99:その他"
+        return other_choice
     s = str(value).strip()
     if not s:
-        return "99:その他"
-    return map_choice(s, SONOTA_WORK_TYPE_CHOICES, default="99:その他", sep=":")
+        return other_choice
+    return map_choice(s, SONOTA_WORK_TYPE_CHOICES, default=other_choice, sep=":")
 
 
 # メディア報道: media_coverage_type
@@ -905,12 +980,13 @@ SONOTA_MEDIA_COVERAGE_TYPE_CHOICES: Dict[str, Tuple[str, str]] = {
 
 def sonota_type_from_media_coverage_type(value: Any) -> str:
     """media_coverage.media_coverage_type → 'code:label'（未知/未設定は 99:その他）"""
+    other_choice = _get_choice_by_code("その他", "8_種別", "99")
     if value is None:
-        return "99:その他"
+        return other_choice
     s = str(value).strip()
     if not s:
-        return "99:その他"
-    return map_choice(s, SONOTA_MEDIA_COVERAGE_TYPE_CHOICES, default="99:その他", sep=":")
+        return other_choice
+    return map_choice(s, SONOTA_MEDIA_COVERAGE_TYPE_CHOICES, default=other_choice, sep=":")
 
 
 # 学術貢献活動: academic_contribution_type
@@ -927,12 +1003,13 @@ SONOTA_ACADEMIC_CONTRIBUTION_TYPE_CHOICES: Dict[str, Tuple[str, str]] = {
 
 def sonota_type_from_academic_contribution_type(value: Any) -> str:
     """academic_contribution.academic_contribution_type → 'code:label'（未知/未設定は 99:その他）"""
+    other_choice = _get_choice_by_code("その他", "8_種別", "99")
     if value is None:
-        return "99:その他"
+        return other_choice
     s = str(value).strip()
     if not s:
-        return "99:その他"
-    return map_choice(s, SONOTA_ACADEMIC_CONTRIBUTION_TYPE_CHOICES, default="99:その他", sep=":")
+        return other_choice
+    return map_choice(s, SONOTA_ACADEMIC_CONTRIBUTION_TYPE_CHOICES, default=other_choice, sep=":")
 
 
 # 社会貢献活動: social_contribution_roles + social_contribution_type
@@ -952,43 +1029,44 @@ def sonota_type_from_social(roles: Any, social_contribution_type: Any) -> str:
     role_set = {str(r).strip() for r in as_list(roles) if r is not None and str(r).strip()}
 
     if "lecturer" in role_set:
-        return "31:社会貢献（出前授業）"
+        return _get_choice_by_code("その他", "8_種別", "31")
     if role_set.intersection({"advisor", "informant"}):
-        return "32:社会貢献（助言・指導・情報提供）"
+        return _get_choice_by_code("その他", "8_種別", "32")
     if role_set.intersection({"planner", "organizing_member"}):
-        return "33:社会貢献（運営参加・支援）"
+        return _get_choice_by_code("その他", "8_種別", "33")
 
     sct = "" if social_contribution_type is None else str(social_contribution_type).strip()
     if sct == "media_report":
-        return "41:メディア出演（テレビ・ラジオ番組）"
-    return "99:その他"
+        return _get_choice_by_code("その他", "8_種別", "41")
+    return _get_choice_by_code("その他", "8_種別", "99")
 
 
 def sonota_type_other(_: Any) -> str:
     """その他レスポンス → 99:その他"""
-    return "99:その他"
+    return _get_choice_by_code("その他", "8_種別", "99")
 
 
 
 # =========================
 # Category-specific coded choices (レビュー対応)
+# restrictions.json から値を取得
 # =========================
 
 def conference_class_choice_kotohappyo(v: Any) -> str:
     """
     口頭発表: 会議区分（is_international_presentation）
       - 未選択(None/空) → ""（空欄）
-      - False → "J:国内会議"
-      - True  → "I:国際会議"
+      - False → "J : 国内会議"
+      - True  → "I : 国際会議"
     """
     if v is None:
         return ""
     if isinstance(v, str) and not v.strip():
         return ""
     if v is True:
-        return "I:国際会議"
+        return _get_choice_by_code("口頭発表", "13_会議区分", "I")
     if v is False:
-        return "J:国内会議"
+        return _get_choice_by_code("口頭発表", "13_会議区分", "J")
     # 想定外は空欄（勝手な推定をしない）
     return ""
 
@@ -996,37 +1074,37 @@ def conference_class_choice_kotohappyo(v: Any) -> str:
 def invited_choice_kotohappyo(v: Any) -> str:
     """
     口頭発表: 招待の有無（invited）
-      - null/未設定 → "0:無回答"
-      - False → "2:招待無し"
-      - True  → "1:招待有り"
+      - null/未設定 → "0 : 無回答"
+      - False → "2 : 招待無し"
+      - True  → "1 : 招待有り"
     """
     if v is None:
-        return "0:無回答"
+        return _get_choice_by_code("口頭発表", "25_招待の有無", "0")
     if isinstance(v, str) and not v.strip():
-        return "0:無回答"
+        return _get_choice_by_code("口頭発表", "25_招待の有無", "0")
     if v is True:
-        return "1:招待有り"
+        return _get_choice_by_code("口頭発表", "25_招待の有無", "1")
     if v is False:
-        return "2:招待無し"
-    return "0:無回答"
+        return _get_choice_by_code("口頭発表", "25_招待の有無", "2")
+    return _get_choice_by_code("口頭発表", "25_招待の有無", "0")
 
 
 def request_choice_misc(v: Any) -> str:
     """
     MISC: 依頼の有無（invited を依頼として扱う）
-      - null/未設定 → "0:無回答"
-      - False → "2:依頼無し"
-      - True  → "1:依頼有り"
+      - null/未設定 → "0 : 無回答"
+      - False → "2 : 依頼無し"
+      - True  → "1 : 依頼有り"
     """
     if v is None:
-        return "0:無回答"
+        return _get_choice_by_code("MISC", "26_依頼の有無", "0")
     if isinstance(v, str) and not v.strip():
-        return "0:無回答"
+        return _get_choice_by_code("MISC", "26_依頼の有無", "0")
     if v is True:
-        return "1:依頼有り"
+        return _get_choice_by_code("MISC", "26_依頼の有無", "1")
     if v is False:
-        return "2:依頼無し"
-    return "0:無回答"
+        return _get_choice_by_code("MISC", "26_依頼の有無", "2")
+    return _get_choice_by_code("MISC", "26_依頼の有無", "0")
 
 
 # =========================

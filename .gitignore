@@ -41,6 +41,7 @@ _sandbox/
 data/*
 !data/researchmap_endpoint_labels.csv
 !data/lang.csv
+!data/restrictions.json
 *.db
 *.db-journal
 
