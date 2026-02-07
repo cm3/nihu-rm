@@ -69,6 +69,15 @@ def generate_snippet(text: str, query: str, context_chars: int = 50) -> str:
     return pattern.sub(lambda m: f'<mark>{m.group()}</mark>', snippet)
 
 
+def _convert_org_fields(researcher: dict) -> dict:
+    """org1/org2をorgに変換（カンマ区切り）"""
+    org1 = researcher.pop('org1', None)
+    org2 = researcher.pop('org2', None)
+    orgs = [o for o in [org1, org2] if o]
+    researcher['org'] = ','.join(orgs) if orgs else None
+    return researcher
+
+
 class Database:
     def __init__(self, db_path: str = None):
         if db_path is None:
@@ -164,7 +173,7 @@ class Database:
                 SELECT * FROM researchers WHERE id IN ({placeholders})
                 ORDER BY name_en ASC
             """, researcher_ids)
-            researchers = [dict(row) for row in cursor.fetchall()]
+            researchers = [_convert_org_fields(dict(row)) for row in cursor.fetchall()]
 
             # 各研究者のマッチした業績を取得（スニペット付き）
             for researcher in researchers:
@@ -182,7 +191,7 @@ class Database:
             params.extend([limit, offset])
 
             cursor.execute(sql, params)
-            researchers = [dict(row) for row in cursor.fetchall()]
+            researchers = [_convert_org_fields(dict(row)) for row in cursor.fetchall()]
 
             # クエリなしの場合はスニペットなし
             for researcher in researchers:
@@ -324,5 +333,5 @@ class Database:
         conn.close()
 
         if row:
-            return dict(row)
+            return _convert_org_fields(dict(row))
         return None

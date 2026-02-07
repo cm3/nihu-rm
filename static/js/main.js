@@ -331,8 +331,8 @@ function renderResults(data) {
         // スニペットはAPIから直接取得（URLも含まれている）
         const snippets = researcher.snippets || [];
 
-        // data-org: org1とorg2をカンマ区切りで結合（クライアントサイドフィルタ用）
-        const orgs = [researcher.org1, researcher.org2].filter(o => o).join(',');
+        // data-org: 機関（カンマ区切り）
+        const orgs = researcher.org || '';
 
         return `
             <div class="bl_articleList_item"
@@ -349,7 +349,7 @@ function renderResults(data) {
                         <div class="bl_researcher_nameBlock">
                             <div class="bl_researcher_name">${researcher.name_ja}</div>
                             <div class="bl_researcher_nameEn">${researcher.name_en}</div>
-                            ${renderOrgTags(researcher.org1, researcher.org2)}
+                            ${renderOrgTags(researcher.org)}
                         </div>
                     </div>
                     <div class="bl_researcher_right">
@@ -412,20 +412,13 @@ function getOrgTagClass(orgName) {
 }
 
 // 機関タグを生成
-function renderOrgTags(org1, org2) {
-    const tags = [];
-    if (org1) {
-        const className = getOrgTagClass(org1);
-        if (className) {
-            tags.push(`<span class="bl_orgTag bl_orgTag_${className}">${org1}</span>`);
-        }
-    }
-    if (org2) {
-        const className = getOrgTagClass(org2);
-        if (className) {
-            tags.push(`<span class="bl_orgTag bl_orgTag_${className}">${org2}</span>`);
-        }
-    }
+function renderOrgTags(org) {
+    if (!org) return '';
+    const orgs = org.split(',').filter(o => o);
+    const tags = orgs.map(o => {
+        const className = getOrgTagClass(o);
+        return className ? `<span class="bl_orgTag bl_orgTag_${className}">${o}</span>` : '';
+    }).filter(t => t);
     return tags.length > 0 ? `<div class="bl_researcher_tags">${tags.join('')}</div>` : '';
 }
 

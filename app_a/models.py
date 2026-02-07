@@ -22,8 +22,7 @@ class Researcher(BaseModel):
     name_ja: str
     name_en: str
     avatar_url: Optional[str] = None
-    org1: Optional[str] = None
-    org2: Optional[str] = None
+    org: Optional[str] = None  # カンマ区切りで複数機関を格納
     position: str
     researchmap_url: str
     snippets: Optional[list[Snippet]] = None

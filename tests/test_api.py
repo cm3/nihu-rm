@@ -95,9 +95,9 @@ class TestSearchResearchers:
         # 地球研と民博には該当者がいないことを確認
         researchers = db.search_researchers(query="室町", limit=50)
         for r in researchers:
-            orgs = [r.get("org1"), r.get("org2")]
-            assert "地球研" not in orgs, "地球研の研究者が含まれています"
-            assert "民博" not in orgs, "民博の研究者が含まれています"
+            org = r.get("org") or ""
+            assert "地球研" not in org, "地球研の研究者が含まれています"
+            assert "民博" not in org, "民博の研究者が含まれています"
 
     def test_query_seishichou(self, db):
         """クエリ「誓詞帳」（未知語）"""
