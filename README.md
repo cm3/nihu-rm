@@ -273,6 +273,22 @@ app_c/main.py            ← Web API から呼び出し
 | `data/researchmap_endpoint_labels.csv` | API エンドポイント定義 | 可 |
 | `data/lang.csv` | 言語コード変換（jpn→日本語） | 可 |
 
+### ローカルファイル（.gitignore 対象）
+
+以下のファイルは .gitignore 対象のため、ローカル環境で用意する必要があります。
+
+| ファイル | 生成スクリプト | 使用スクリプト | 説明 |
+|----------|----------------|----------------|------|
+| `data/cors.txt` | - | `app_a/main.py` | CORS 許可オリジン |
+| `data/researchers.db` | `app_a/setup_db.py` | `app_a/database.py` | SQLite データベース |
+| `data/json/` | `app_a/download_data.py` | `app_a/setup_db.py` | 研究者 JSON データ |
+| `data/csv/` | `app_c/main.py` | `app_c/csv_to_excel.py` | CSV 出力 |
+| `data/xlsx/` | `app_c/csv_to_excel.py` | - | Excel 出力 |
+| `data/test_ids.txt` | - | `app_a/download_data.py` | app_c テスト用 ID 一覧 |
+| `app_c/work/` | `app_c/main.py` | `app_c/main.py` | 作業ディレクトリ |
+
+生成スクリプトが「-」のものは外部から与える必要があります。
+
 ---
 
 ## API エンドポイント
@@ -288,7 +304,7 @@ app_c/main.py            ← Web API から呼び出し
 | GET | `/api/researchers` | 研究者検索 |
 | GET | `/api/researchers/{id}` | 研究者詳細 |
 | GET | `/api/organizations` | 機関一覧 |
-| GET | `/api/initial-counts` | イニシャル別件数 |
+| GET | `/api/facet-counts` | イニシャル別・機関別件数 |
 
 ### app_c: Excel 変換
 
