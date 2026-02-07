@@ -33,6 +33,7 @@ CATEGORY_MAP = {
 FILL_BLUE = PatternFill(start_color='FFDAE3F3', end_color='FFDAE3F3', fill_type='solid')
 FILL_GRAY = PatternFill(start_color='FFD6DCE4', end_color='FFD6DCE4', fill_type='solid')
 FILL_YELLOW = PatternFill(start_color='FFFFFFCC', end_color='FFFFFFCC', fill_type='solid')
+FILL_EXAMPLE = PatternFill(start_color='FFD9D9D9', end_color='FFD9D9D9', fill_type='solid')  # 記載例行
 
 # フォント定義
 FONT_BLACK = Font(color='FF000000')
@@ -412,6 +413,20 @@ def load_data_validations():
 DATA_VALIDATIONS = load_data_validations()
 
 
+def load_examples():
+    """examples.json から記載例データを読み込む"""
+    json_path = Path(__file__).parent.parent / "data" / "examples.json"
+    if not json_path.exists():
+        return {}
+    with open(json_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    # メタデータを除外してシートデータのみ返す
+    return {k: v for k, v in data.items() if not k.startswith("_")}
+
+
+SHEET_EXAMPLES = load_examples()
+
+
 def get_fill(color_name):
     """色名からFillオブジェクトを取得"""
     if color_name == 'blue':
@@ -638,7 +653,21 @@ def create_sheet(wb, sheet_name, structure, csv_data=None):
         except:
             pass
 
-    # CSVデータを挿入（行4から）
+    # 行4: 記載例（examples.json から）
+    example_data = SHEET_EXAMPLES.get(sheet_name, {})
+    if example_data:
+        for col_num, _, _, _, _ in columns:
+            cell = ws.cell(row=4, column=col_num)
+            # 記載例の値を設定
+            col_key = str(col_num)
+            if col_key in example_data:
+                cell.value = example_data[col_key]
+            # 背景色とスタイルを適用
+            cell.fill = FILL_EXAMPLE
+            cell.border = THIN_BORDER
+
+    # CSVデータを挿入（行5から）
+    data_start_row = 5
     if csv_data:
         # CSVのカラム名とExcel列の対応を作成
         col_mapping = {}
@@ -646,7 +675,7 @@ def create_sheet(wb, sheet_name, structure, csv_data=None):
             if csv_col:
                 col_mapping[csv_col] = col_num
 
-        for row_idx, row_data in enumerate(csv_data, start=4):
+        for row_idx, row_data in enumerate(csv_data, start=data_start_row):
             for csv_col, col_num in col_mapping.items():
                 if csv_col in row_data:
                     value = row_data[csv_col]
@@ -667,13 +696,13 @@ def create_sheet(wb, sheet_name, structure, csv_data=None):
 
     # データ入力規則（ドロップダウンリスト）を適用
     if sheet_name in DATA_VALIDATIONS:
-        # データ行の範囲を決定（4行目から、データがあれば最終行+余裕、なければ100行程度）
+        # データ行の範囲を決定（5行目から、データがあれば最終行+余裕、なければ100行程度）
         data_rows = len(csv_data) if csv_data else 0
-        end_row = max(data_rows + 4 + 50, 100)  # データ行 + 余裕
+        end_row = max(data_rows + data_start_row + 50, 100)
 
         for col_num, formula in DATA_VALIDATIONS[sheet_name].items():
             col_letter = get_column_letter(col_num)
-            cell_range = f"{col_letter}4:{col_letter}{end_row}"
+            cell_range = f"{col_letter}{data_start_row}:{col_letter}{end_row}"
 
             dv = DataValidation(
                 type="list",

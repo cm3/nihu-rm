@@ -273,6 +273,7 @@ app_c/main.py            ← Web API から呼び出し
 | `data/researchmap_endpoint_labels.csv` | API エンドポイント定義 | 可 |
 | `data/lang.csv` | 言語コード変換（jpn→日本語） | 可 |
 | `data/restrictions.json` | Excel 入力規則（`common.py`, `csv_to_excel.py` で使用） | 可 |
+| `data/examples.json` | Excel 4行目の記載例（`csv_to_excel.py` で使用） | 可 |
 
 ### ローカルファイル（.gitignore 対象）
 
