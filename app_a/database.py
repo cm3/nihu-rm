@@ -299,7 +299,7 @@ class Database:
         query: Optional[str] = None
     ) -> Dict[str, int]:
         """各機関ごとの研究者数を取得"""
-        org_list = ['歴博', '国文研', '国語研', '日文研', '地球研', '民博']
+        org_list = ['歴博', '国文研', '国語研', '日文研', '地球研', '民博', '機構本部']
         counts = {}
         for org_name in org_list:
             counts[org_name] = self.count_researchers(query=query, org=org_name)

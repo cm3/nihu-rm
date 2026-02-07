@@ -7,7 +7,8 @@ const state = {
     pageSize: 50,
     organizations: [],
     initialCounts: {},
-    orgCounts: {}
+    orgCounts: {},
+    totalCount: 0  // APIから返ってくる全件数
 };
 
 // 初期化
@@ -214,7 +215,7 @@ function handleInitialFilter(e) {
     performSearch();
 }
 
-// 機関フィルター（クライアントサイドでフィルタリング）
+// 機関フィルター（APIでフィルタリング）
 function handleOrgFilterChange() {
     // チェックされている機関を取得（disabledは除外）
     const checkedInputs = document.querySelectorAll('#orgFilters input[type="checkbox"]:checked');
@@ -230,15 +231,11 @@ function handleOrgFilterChange() {
         // 一部選択
         state.orgs = Array.from(checkedInputs).map(input => input.value);
     }
+    state.page = 1;  // ページをリセット
     updateUrl();
 
-    // クライアントサイドで表示/非表示を切り替え（APIリクエスト不要）
-    applyOrgFilter();
-}
-
-// 表示件数を更新
-function updateVisibleCount(visibleCount) {
-    document.getElementById('resultCount').textContent = `${visibleCount}件の研究者が見つかりました`;
+    // APIで検索し直す
+    performSearch();
 }
 
 // リセット
@@ -271,10 +268,22 @@ async function performSearch() {
     const params = new URLSearchParams();
 
     if (state.query) params.append('query', state.query);
-    // org はクライアントサイドでフィルタするためAPIには送らない
+    // 機関フィルター（'none'以外の場合のみAPIに送る）
+    if (state.orgs.length > 0 && !(state.orgs.length === 1 && state.orgs[0] === 'none')) {
+        params.append('org', state.orgs.join(','));
+    }
     if (state.initial) params.append('initial', state.initial);
     params.append('page', state.page);
     params.append('page_size', state.pageSize);
+
+    // 'none'の場合は検索せず0件表示
+    if (state.orgs.length === 1 && state.orgs[0] === 'none') {
+        state.totalCount = 0;
+        document.getElementById('resultCount').textContent = '0件の研究者が見つかりました';
+        document.getElementById('researcherList').innerHTML = '<div class="bl_articleList_item"><p>機関が選択されていません。</p></div>';
+        document.getElementById('pagination').innerHTML = '';
+        return;
+    }
 
     try {
         showLoading();
@@ -283,43 +292,10 @@ async function performSearch() {
 
         renderResults(data);
         renderPagination(data);
-
-        // 検索結果表示後にクライアントサイドで機関フィルタを適用
-        applyOrgFilter();
     } catch (error) {
         showError('検索中にエラーが発生しました');
         console.error('Search error:', error);
     }
-}
-
-// 機関フィルタを適用（表示/非表示の切り替え）
-function applyOrgFilter() {
-    // disabledでない（有効な）チェックボックスのみを対象にする
-    const enabledInputs = document.querySelectorAll('#orgFilters input[type="checkbox"]:not(:disabled)');
-    const checkedInputs = document.querySelectorAll('#orgFilters input[type="checkbox"]:checked');
-    const selectedOrgs = Array.from(checkedInputs).map(input => input.value);
-
-    // 有効なチェックボックスが全てチェックされているか
-    const isAllSelected = checkedInputs.length === enabledInputs.length && enabledInputs.length > 0;
-    // state.orgs が ['none'] または checkedInputs が 0 の場合は全非表示
-    const isNoneSelected = (state.orgs.length === 1 && state.orgs[0] === 'none') || checkedInputs.length === 0;
-
-    let visibleCount = 0;
-    document.querySelectorAll('.bl_articleList_item').forEach(item => {
-        const itemOrgs = (item.dataset.org || '').split(',').filter(o => o);
-        let isVisible;
-        if (isNoneSelected) {
-            isVisible = false;  // 全て未チェックなら全非表示
-        } else if (isAllSelected) {
-            isVisible = true;   // 全てチェックなら全表示
-        } else {
-            isVisible = itemOrgs.some(org => selectedOrgs.includes(org));
-        }
-        item.classList.toggle('is_hidden', !isVisible);
-        if (isVisible) visibleCount++;
-    });
-
-    updateVisibleCount(visibleCount);
 }
 
 // ローディング表示
@@ -336,6 +312,9 @@ function showError(message) {
 // 検索結果をレンダリング
 function renderResults(data) {
     const { total, researchers } = data;
+
+    // 全件数を保存
+    state.totalCount = total;
 
     // 結果件数
     document.getElementById('resultCount').textContent = `${total}件の研究者が見つかりました`;
