@@ -1160,3 +1160,42 @@ def convert_languages(langs: Any) -> str:
         return "; ".join(converted)
 
     return convert_language_code(str(langs).strip())
+
+
+# =========================
+# Country code conversion
+# =========================
+
+_COUNTRY_MAP: Dict[str, str] = {}
+
+
+def _load_country_map() -> None:
+    """data/country.csv から国コード→日本語名のマッピングを読み込む。"""
+    global _COUNTRY_MAP
+    if _COUNTRY_MAP:
+        return
+
+    import csv
+    country_csv = _DATA_DIR / "country.csv"
+    if not country_csv.exists():
+        return
+
+    with country_csv.open("r", encoding="utf-8-sig") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            code = row.get("コード", "").strip()
+            name_ja = row.get("国名(日)", "").strip()
+            if code and name_ja:
+                _COUNTRY_MAP[code] = name_ja
+
+
+def convert_country_code(code: str) -> str:
+    """
+    国コード（例: JPN, USA）を日本語名（例: 日本, アメリカ合衆国）に変換する。
+    該当する値がなければ元のコードをそのまま返す。
+    """
+    if not code:
+        return ""
+    _load_country_map()
+    code = code.strip()
+    return _COUNTRY_MAP.get(code, code)

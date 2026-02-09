@@ -43,6 +43,7 @@ data/*
 !data/lang.csv
 !data/restrictions.json
 !data/examples.json
+!data/country.csv
 *.db
 *.db-journal
 

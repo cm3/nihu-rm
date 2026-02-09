@@ -31,6 +31,7 @@ from common import (
     as_list,
     build_project_index,
     conference_class_choice_kotohappyo,
+    convert_country_code,
     convert_languages,
     extract_project_numbers_and_titles,
     find_see_also_url,
@@ -164,8 +165,8 @@ def make_row_kotohappyo(
     location_ja = get_lang_fallback(location, ("ja", "en"))
     location_en = get_lang_fallback(location, ("en",))
 
-    # 国・地域
-    address_country = str(item.get("address_country", "") or "").strip()
+    # 国・地域（コードから日本語名に変換）
+    address_country = convert_country_code(str(item.get("address_country", "") or "").strip())
 
     # 日付（発表年月日は publication_date 優先）
     from_date = normalize_date_yyyymmdd(pick_from_date(item))
