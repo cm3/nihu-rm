@@ -100,22 +100,32 @@ def _extract_permalinks_from_header_tsv(tsv_path: Path, column_name: str = "rm_i
     """ヘッダー付き TSV（タブ区切り）から指定カラムの値を抽出する"""
     permalinks = set()
     if not tsv_path.exists():
+        print(f"Warning: TSV file not found: {tsv_path}", file=sys.stderr)
         return permalinks
 
     with tsv_path.open("r", encoding="utf-8-sig") as f:
         lines = f.readlines()
 
     if not lines:
+        print(f"Warning: TSV file is empty: {tsv_path}", file=sys.stderr)
         return permalinks
 
     # ヘッダー行を解析
-    headers = [h.strip() for h in lines[0].strip().split("\t")]
+    header_line = lines[0].strip()
+    if "\t" not in header_line:
+        print(f"Warning: TSV file is not tab-delimited: {tsv_path}", file=sys.stderr)
+        print(f"  Header line: {repr(header_line)}", file=sys.stderr)
+        return permalinks
+
+    headers = [h.strip() for h in header_line.split("\t")]
     if column_name not in headers:
+        print(f"Warning: Column '{column_name}' not found in TSV: {tsv_path}", file=sys.stderr)
+        print(f"  Available columns: {headers}", file=sys.stderr)
         return permalinks
     col_idx = headers.index(column_name)
 
     # データ行を処理
-    for line in lines[1:]:
+    for line_num, line in enumerate(lines[1:], start=2):
         fields = line.strip().split("\t")
         if col_idx < len(fields):
             value = fields[col_idx].strip()
@@ -141,15 +151,22 @@ def load_allowed_ids() -> set[str]:
     main_csv_name = os.environ.get("TOOL_C_MAIN_CSV", "").strip()
     if main_csv_name:
         main_csv = DATA_DIR / main_csv_name
-        allowed.update(_extract_permalinks_from_url_csv(main_csv))
+        main_ids = _extract_permalinks_from_url_csv(main_csv)
+        allowed.update(main_ids)
+        print(f"Loaded {len(main_ids)} IDs from main CSV: {main_csv_name}", file=sys.stderr)
+    else:
+        print("Warning: TOOL_C_MAIN_CSV not set", file=sys.stderr)
 
     # 追加リスト（ヘッダー付き）
     add_csv_name = os.environ.get("TOOL_C_ADD_CSV", "").strip()
     if add_csv_name:
         add_csv = DATA_DIR / add_csv_name
         column_name = os.environ.get("TOOL_C_ADD_CSV_COLUMN", "rm_id").strip()
-        allowed.update(_extract_permalinks_from_header_tsv(add_csv, column_name))
+        add_ids = _extract_permalinks_from_header_tsv(add_csv, column_name)
+        allowed.update(add_ids)
+        print(f"Loaded {len(add_ids)} IDs from add CSV: {add_csv_name}", file=sys.stderr)
 
+    print(f"Total allowed IDs: {len(allowed)}", file=sys.stderr)
     return allowed
 
 
