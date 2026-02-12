@@ -466,7 +466,7 @@ def get_fiscal_year_range(fiscal_year):
     if fiscal_year is None:
         return None
     fy = int(fiscal_year)
-    start_date = fy * 10000 + 401      # 20230401
+    start_date = fy * 10000 + 400      # 20230400（日付なしの「202304」を含めるため）
     end_date = (fy + 1) * 10000 + 331  # 20240331
     return (start_date, end_date)
 

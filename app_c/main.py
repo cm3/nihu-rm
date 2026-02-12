@@ -19,8 +19,13 @@ import shutil
 import uuid
 from pathlib import Path
 
+from dotenv import load_dotenv
 import httpx
 from fastapi import FastAPI, Form, HTTPException, BackgroundTasks
+
+# プロジェクトルートの .env を読み込み
+PROJECT_ROOT = Path(__file__).parent.parent
+load_dotenv(PROJECT_ROOT / ".env")
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -73,31 +78,77 @@ DATA_DIR = Path(__file__).parent.parent / "data"
 RESEARCHMAP_API_BASE = "https://api.researchmap.jp"
 
 
+def _extract_permalinks_from_url_csv(csv_path: Path) -> set[str]:
+    """CSV ファイルから researchmap URL を検出し permalink を抽出する"""
+    permalinks = set()
+    if not csv_path.exists():
+        return permalinks
+
+    with csv_path.open("r", encoding="utf-8-sig") as f:
+        for line in f:
+            # https://researchmap.jp/{permalink} から permalink を抽出
+            match = re.search(r"https://researchmap\.jp/([^/,\s\"]+)", line)
+            if match:
+                permalink = match.group(1)
+                # avatar などを除外
+                if not permalink.endswith((".jpg", ".png", ".gif")):
+                    permalinks.add(permalink)
+    return permalinks
+
+
+def _extract_permalinks_from_header_tsv(tsv_path: Path, column_name: str = "rm_id") -> set[str]:
+    """ヘッダー付き TSV（タブ区切り）から指定カラムの値を抽出する"""
+    permalinks = set()
+    if not tsv_path.exists():
+        return permalinks
+
+    with tsv_path.open("r", encoding="utf-8-sig") as f:
+        lines = f.readlines()
+
+    if not lines:
+        return permalinks
+
+    # ヘッダー行を解析
+    headers = [h.strip() for h in lines[0].strip().split("\t")]
+    if column_name not in headers:
+        return permalinks
+    col_idx = headers.index(column_name)
+
+    # データ行を処理
+    for line in lines[1:]:
+        fields = line.strip().split("\t")
+        if col_idx < len(fields):
+            value = fields[col_idx].strip()
+            if value:
+                permalinks.add(value)
+
+    return permalinks
+
+
 def load_allowed_ids() -> set[str]:
-    """CSV ファイルから許可された permalink を読み込む"""
+    """CSV ファイルから許可された permalink を読み込む
+
+    読み込むファイル（環境変数で指定、data/ ディレクトリ内）:
+      - TOOL_C_MAIN_CSV: メインリスト（URL形式）
+      - TOOL_C_ADD_CSV: 追加リスト（ヘッダー付き、オプション）
+      - TOOL_C_ADD_CSV_COLUMN: 追加リストのカラム名（デフォルト: rm_id）
+
+    CSV仕様: .env-sample のコメントを参照
+    """
     allowed = set()
 
-    # tool-a-1225-converted.csv から permalink を抽出
-    csv_path = DATA_DIR / "tool-a-1225-converted.csv"
-    if csv_path.exists():
-        with csv_path.open("r", encoding="utf-8-sig") as f:
-            for line in f:
-                # https://researchmap.jp/{permalink} からpermalinkを抽出
-                match = re.search(r"https://researchmap\.jp/([^/,\s\"]+)", line)
-                if match:
-                    permalink = match.group(1)
-                    # avatar などを除外
-                    if not permalink.endswith((".jpg", ".png", ".gif")):
-                        allowed.add(permalink)
+    # メインリスト（URL形式）
+    main_csv_name = os.environ.get("TOOL_C_MAIN_CSV", "").strip()
+    if main_csv_name:
+        main_csv = DATA_DIR / main_csv_name
+        allowed.update(_extract_permalinks_from_url_csv(main_csv))
 
-    # test_ids.txt からも読み込み
-    ids_path = DATA_DIR / "test_ids.txt"
-    if ids_path.exists():
-        with ids_path.open("r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if line and not line.startswith("#"):
-                    allowed.add(line)
+    # 追加リスト（ヘッダー付き）
+    add_csv_name = os.environ.get("TOOL_C_ADD_CSV", "").strip()
+    if add_csv_name:
+        add_csv = DATA_DIR / add_csv_name
+        column_name = os.environ.get("TOOL_C_ADD_CSV_COLUMN", "rm_id").strip()
+        allowed.update(_extract_permalinks_from_header_tsv(add_csv, column_name))
 
     return allowed
 
@@ -251,9 +302,10 @@ def convert_csvs_to_excel(csv_dir: Path, output_dir: Path, researcher_id: str, f
     return xlsx_path
 
 
-def cleanup_old_files(max_age_hours: int = 24):
+def cleanup_old_files():
     """古い一時ファイルを削除"""
     import time
+    max_age_hours = int(os.environ.get("TOOL_C_WORK_MAX_AGE_HOURS", "24"))
     now = time.time()
     max_age_seconds = max_age_hours * 3600
 
