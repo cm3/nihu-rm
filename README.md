@@ -15,18 +15,22 @@
 
 ```
 researcher-search/
+├── shared/                    # app_a / app_c 共通モジュール
+│   ├── endpoint_config.py    # エンドポイント設定（ラベル CSV 読み込み）
+│   └── api_client.py         # researchmap API クライアント
+│
 ├── app_a/                     # 研究者検索システム
 │   ├── main.py               # FastAPI メインアプリ
 │   ├── database.py           # データベース処理
 │   ├── models.py             # Pydantic モデル
 │   ├── routers/              # API ルーター
 │   ├── templates/            # HTML テンプレート
-│   ├── download_data.py      # researchmap データ取得（共有）
+│   ├── download_data.py      # バッチダウンロード CLI
 │   └── setup_db.py           # DB セットアップ
 │
 ├── app_c/                     # Excel 変換 Web アプリ
 │   ├── main.py               # FastAPI メインアプリ
-│   ├── common.py             # 共通ユーティリティ
+│   ├── common.py             # CSV 変換用ユーティリティ
 │   ├── researchmap_json_to_csv_*.py  # JSON→CSV 変換（7種）
 │   ├── csv_to_excel.py       # CSV→Excel 変換
 │   ├── run_all.sh            # バッチ処理スクリプト
@@ -253,17 +257,27 @@ sudo certbot --nginx -d your-domain.example.com
 
 ## 共有コンポーネント
 
-### download_data.py
+### shared/ パッケージ
 
-`app_a/download_data.py` は両アプリで共有されています。
+app_a と app_c の共通ロジックは `shared/` パッケージに集約されています。
 
-- **app_a**: バッチダウンロード用として直接実行
-- **app_c**: `fetch_researcher_data()` 関数を import して使用
+| モジュール | 内容 | 主な利用元 |
+|------------|------|------------|
+| `shared/endpoint_config.py` | エンドポイント定義の読み込み・ラベル変換 | app_a, app_c |
+| `shared/api_client.py` | researchmap API からのデータ取得 | app_a, app_c |
 
 ```
-app_a/download_data.py   ← 正本
-    ↓ import
-app_c/main.py            ← Web API から呼び出し
+shared/
+  endpoint_config.py   ← app_a, app_c/common.py が参照
+  api_client.py        ← app_a, app_c が参照（endpoint_config に依存）
+
+app_a/
+  download_data.py     → shared/ のみ参照（バッチダウンロード CLI）
+
+app_c/
+  main.py              → shared/ + common.py（Web API から呼び出し）
+  common.py            → shared/ から再エクスポート + CSV 変換用ユーティリティ
+  変換スクリプト群      → common.py のみ（shared を直接参照しない）
 ```
 
 ### データファイル

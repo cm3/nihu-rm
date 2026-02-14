@@ -39,16 +39,15 @@ import sys
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
-# app_a のパスを追加（download_data.py の参照用）
-APP_A_DIR = Path(__file__).parent.parent / "app_a"
-if str(APP_A_DIR) not in sys.path:
-    sys.path.insert(0, str(APP_A_DIR))
+# プロジェクトルートを sys.path に追加（shared パッケージ参照用）
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from common import (
     get_researchmap_data,
     get_profile_fields,
 )
-from download_data import fetch_researcher_data
+from shared.api_client import fetch_researcher_data
 
 # root_path を環境変数から取得（nginx でサブパス配下に配置する場合に設定）
 ROOT_PATH = os.environ.get("NIHU_RM_ROOT_PATH", "")
